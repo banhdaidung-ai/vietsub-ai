@@ -1,0 +1,76 @@
+name: Build Desktop Installers (macOS & Windows)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build macOS (.app & .dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build macOS App & DMG
+        run: |
+          pyinstaller --noconfirm --clean VietsubAI.spec
+          mkdir -p dist/dmg_temp
+          cp -R "dist/VietsubAI.app" "dist/dmg_temp/"
+          ln -s /Applications "dist/dmg_temp/Applications"
+          hdiutil create -volname "Vietsub AI" -srcfolder "dist/dmg_temp" -ov -format UDZO "dist/VietsubAI.dmg"
+
+      - name: Upload macOS DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VietsubAI-macOS
+          path: dist/VietsubAI.dmg
+
+  build-windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows Executable
+        run: |
+          pyinstaller --noconfirm --clean VietsubAI.spec
+
+      - name: Zip Windows Build
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\VietsubAI" -DestinationPath "dist\VietsubAI-Windows.zip"
+
+      - name: Upload Windows Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VietsubAI-Windows
+          path: dist/VietsubAI-Windows.zip
