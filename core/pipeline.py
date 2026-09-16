@@ -109,13 +109,22 @@ class Pipeline:
             self._log("⚠️ Đã hủy bởi người dùng.")
             return
 
-        # ── Bước 2: Gemini phiên âm + dịch → SRT ───────────────────────────
-        self._log("🤖 Đang gửi video lên Gemini AI để phiên âm và dịch...")
+        source_lang = config.get("source_language", "zh")
+        enable_tts = config.get("enable_tts", True if source_lang != "vi" else False)
+
+        # ── Bước 2: Gemini phiên âm / dịch → SRT ───────────────────────────
+        if source_lang == "vi":
+            self._log("🤖 Đang gửi video lên Gemini AI để phiên âm tạo phụ đề Tiếng Việt...")
+        elif source_lang == "en":
+            self._log("🤖 Đang gửi video lên Gemini AI để phiên âm và dịch Tiếng Anh → Việt...")
+        else:
+            self._log("🤖 Đang gửi video lên Gemini AI để phiên âm và dịch Tiếng Trung → Việt...")
+
         gemini = GeminiProcessor(
             api_key=config["gemini_api_key"],
             progress_callback=self._make_progress_cb(0.10, 0.50),
         )
-        srt_content = gemini.process_video(video_path)
+        srt_content = gemini.process_video(video_path, source_lang=source_lang)
 
         # Lưu SRT tạm
         srt_tmp = os.path.join(tmp_dir, "subtitles.srt")
@@ -123,17 +132,23 @@ class Pipeline:
             f.write(srt_content)
 
         segments = parse_srt(srt_content)
-        self._log(f"✅ Dịch xong: {len(segments)} đoạn phụ đề tiếng Việt")
+        if source_lang == "vi":
+            self._log(f"✅ Phiên âm xong: {len(segments)} đoạn phụ đề tiếng Việt")
+            self._progress(0.50, "Phiên âm xong")
+        else:
+            self._log(f"✅ Dịch xong: {len(segments)} đoạn phụ đề tiếng Việt")
+            self._progress(0.50, "Dịch xong")
 
         # Lưu SRT ra output folder
         video_stem = Path(video_path).stem
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_srt = os.path.join(output_dir, f"{video_stem}_vietsub_{timestamp}.srt")
+        suffix = "sub_vi" if source_lang == "vi" else "vietsub"
+        output_srt = os.path.join(output_dir, f"{video_stem}_{suffix}_{timestamp}.srt")
         shutil.copy2(srt_tmp, output_srt)
         self._log(f"💾 Đã lưu phụ đề: {Path(output_srt).name}")
 
         # Lưu file text (.txt) lời thoại ra output folder
-        output_txt = os.path.join(output_dir, f"{video_stem}_vietsub_{timestamp}.txt")
+        output_txt = os.path.join(output_dir, f"{video_stem}_{suffix}_{timestamp}.txt")
         txt_lines = []
         for seg in segments:
             clean_line = " ".join(seg.text.split()).strip()
@@ -143,42 +158,48 @@ class Pipeline:
             f.write("\n".join(txt_lines) + "\n")
         self._log(f"📝 Đã lưu file text: {Path(output_txt).name}")
 
-        self._progress(0.50, "Dịch xong")
         if self._cancelled:
             self._log("⚠️ Đã hủy bởi người dùng.")
             return
 
-        # ── Bước 3: Lấy thời lượng video ────────────────────────────────────
-        try:
-            total_duration = get_video_duration(video_path)
-            self._log(f"⏱️ Thời lượng video: {total_duration:.1f}s")
-        except Exception:
-            # Fallback: dùng end_ms của segment cuối + 5s buffer
-            total_duration = (segments[-1].end_ms / 1000 + 5) if segments else 3600.0
+        # ── Bước 3 & 4: TTS tạo giọng đọc tiếng Việt (nếu được bật) ────────
+        tts_audio = None
+        if enable_tts:
+            try:
+                total_duration = get_video_duration(video_path)
+                self._log(f"⏱️ Thời lượng video: {total_duration:.1f}s")
+            except Exception:
+                # Fallback: dùng end_ms của segment cuối + 5s buffer
+                total_duration = (segments[-1].end_ms / 1000 + 5) if segments else 3600.0
 
-        # ── Bước 4: TTS tạo giọng đọc tiếng Việt ───────────────────────────
-        self._log(f"🗣️ Đang tạo giọng đọc ({config.get('tts_voice', 'vi-VN-HoaiMyNeural')})...")
-        tts_audio = os.path.join(tmp_dir, "tts_track.mp3")
+            self._log(f"🗣️ Đang tạo giọng đọc ({config.get('tts_voice', 'vi-VN-HoaiMyNeural')})...")
+            tts_audio = os.path.join(tmp_dir, "tts_track.mp3")
 
-        tts = TTSGenerator(
-            voice=config.get("tts_voice", "vi-VN-HoaiMyNeural"),
-            progress_callback=self._make_progress_cb(0.50, 0.75),
-            is_cancelled=lambda: self._cancelled,
-        )
-        tts.generate_track(segments, total_duration, tts_audio)
-        self._log("✅ Tạo giọng đọc xong")
+            tts = TTSGenerator(
+                voice=config.get("tts_voice", "vi-VN-HoaiMyNeural"),
+                progress_callback=self._make_progress_cb(0.50, 0.75),
+                is_cancelled=lambda: self._cancelled,
+            )
+            tts.generate_track(segments, total_duration, tts_audio)
+            self._log("✅ Tạo giọng đọc xong")
+            self._progress(0.75, "Tạo giọng xong")
+        else:
+            self._log("⏩ Bỏ qua lồng tiếng AI — Giữ nguyên 100% âm thanh gốc của video.")
+            self._progress(0.75, "Bỏ qua TTS")
 
-        self._progress(0.75, "Tạo giọng xong")
         if self._cancelled:
             self._log("⚠️ Đã hủy bởi người dùng.")
             return
 
         # ── Bước 5: FFmpeg ghép video cuối cùng ─────────────────────────────
         output_video = os.path.join(
-            output_dir, f"{video_stem}_vietsub_{timestamp}.mp4"
+            output_dir, f"{video_stem}_{suffix}_{timestamp}.mp4"
         )
         audio_mode = config.get("audio_mode", "mix")
-        mode_label = "mix âm thanh" if audio_mode == "mix" else "thay hoàn toàn"
+        if not enable_tts:
+            mode_label = "gắn phụ đề chữ, giữ âm thanh gốc"
+        else:
+            mode_label = "mix âm thanh" if audio_mode == "mix" else "thay hoàn toàn"
         self._log(f"🎬 Đang render video ({mode_label})...")
 
         ffmpeg = FFmpegProcessor(
@@ -192,6 +213,9 @@ class Pipeline:
             audio_mode=audio_mode,
             original_volume=config.get("original_volume", 0.3),
             tts_volume=config.get("tts_volume", 1.0),
+            sub_only=not enable_tts,
+            subtitle_font_size=int(config.get("subtitle_font_size", 10)),
+            subtitle_margin_v=int(config.get("subtitle_margin_v", 8)),
         )
 
         self._progress(1.0, "Hoàn tất!")

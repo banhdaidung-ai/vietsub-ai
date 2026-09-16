@@ -95,12 +95,23 @@ class TTSGenerator:
                 if not success:
                     continue  # Bỏ qua đoạn lỗi để không ngắt toàn bộ tiến trình
 
-                # Điều chỉnh tốc độ nếu TTS dài hơn thời gian phụ đề
-                seg_dur_ms = seg.end_ms - seg.start_ms
-                if seg_dur_ms > 200:  # Chỉ điều chỉnh nếu segment đủ dài
-                    tts_dur_ms = self._get_audio_duration_ms(seg_path)
-                    if tts_dur_ms > 0 and tts_dur_ms > seg_dur_ms * 1.15:
-                        speed = min(tts_dur_ms / seg_dur_ms, 2.0)
+                # Điều chỉnh tốc độ thông minh: tận dụng khoảng lặng trước câu kế tiếp
+                # và giới hạn tốc độ tối đa ở mức 1.25x để giọng đọc luôn tự nhiên, không bị líu lưỡi
+                if i + 1 < len(segments):
+                    next_start_ms = segments[i + 1].start_ms
+                else:
+                    next_start_ms = int(total_duration_sec * 1000)
+
+                seg_dur_ms = max(seg.end_ms - seg.start_ms, 600)
+                # Cho phép tận dụng khoảng trống yên lặng tới câu tiếp theo (chừa 150ms nghỉ giữa các câu)
+                available_dur_ms = max(seg_dur_ms, next_start_ms - seg.start_ms - 150)
+
+                tts_dur_ms = self._get_audio_duration_ms(seg_path)
+                if tts_dur_ms > 0 and tts_dur_ms > available_dur_ms:
+                    # Chỉ tăng tốc khi câu nói thực sự có nguy cơ đè lên câu tiếp theo
+                    raw_speed = tts_dur_ms / max(available_dur_ms, 600)
+                    if raw_speed > 1.05:
+                        speed = min(raw_speed, 1.25)  # Trần tối đa 1.25x để đảm bảo giọng đọc tự nhiên
                         adjusted_path = seg_path.replace(".mp3", "_adj.mp3")
                         subprocess.run(
                             [

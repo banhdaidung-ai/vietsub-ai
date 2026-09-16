@@ -1,13 +1,17 @@
-# Vietsub AI
+# Vietsub AI — Dịch & Tạo Phụ Đề Video Chuyên Nghiệp
 
-Ứng dụng Desktop tự động dịch video tiếng Trung sang tiếng Việt, lồng tiếng (TTS) và ghép phụ đề cứng.
+Ứng dụng Desktop tự động dịch video đa ngôn ngữ (Tiếng Trung, Tiếng Anh) sang Tiếng Việt, lồng tiếng AI (TTS), phiên âm và tạo phụ đề text cho video Tiếng Việt.
 
-## Tính năng
-- Hỗ trợ tải video từ **YouTube, Bilibili** hoặc dùng **file có sẵn**
-- Dịch siêu tốc bằng **Gemini 2.0 Flash AI** (Chất lượng cao, không cần tách âm thanh trước)
-- Tạo giọng đọc tự nhiên bằng **edge-tts** (Giọng Microsoft Neural)
-- Hỗ trợ mix âm thanh (giữ nhạc nền) hoặc thay thế hoàn toàn
-- Giao diện đẹp, dễ dùng, chạy trên mọi hệ điều hành (Windows, macOS, Linux)
+## Tính năng nổi bật
+- 🌐 **Đa ngôn ngữ nguồn:**
+  - 🇨🇳 **Tiếng Trung → Tiếng Việt:** Dịch thuật ngữ cảnh, lồng tiếng AI và ghép phụ đề chuẩn xác.
+  - 🇺🇸 **Tiếng Anh → Tiếng Việt:** Dịch tự nhiên, xử lý thành ngữ (idioms), tiếng lóng, khẩu ngữ đời thường.
+  - 🇻🇳 **Tạo phụ đề Tiếng Việt:** Lắng nghe và phiên âm chuẩn xác 100% tiếng Việt có dấu, xuất file `.srt`, `.txt` và gắn phụ đề vào video (giữ nguyên 100% âm thanh gốc).
+- 📥 **Tải video đa nền tảng:** Hỗ trợ link TikTok, Facebook Reels, YouTube Shorts/Video, Bilibili hoặc chọn file video trên máy.
+- 🤖 **Trí tuệ nhân tạo Gemini AI:** Phiên âm và dịch thuật tốc độ cao, timestamp khớp từng mili-giây.
+- 🎙️ **Giọng đọc AI tự nhiên:** Sử dụng công nghệ Microsoft Edge Neural (giọng Hoài My truyền cảm, Nam Minh trầm ấm) với tuỳ chọn bật/tắt linh hoạt.
+- 🎬 **Ghép video chuyên nghiệp:** Hỗ trợ mix âm lượng nhạc nền/giọng đọc hoặc giữ âm thanh gốc chỉ ghép phụ đề chữ.
+- 🌓 **Giao diện hiện đại (Studio Dark/Light):** Tích hợp Pipeline Step Tracker và Studio Terminal theo dõi tiến độ chi tiết.
 
 ## Cài đặt (Dành cho Developer)
 

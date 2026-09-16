@@ -22,8 +22,7 @@ echo "📦 Kiểm tra PyInstaller..."
 uv pip install --python "$PYTHON_BIN" pyinstaller
 
 # 3. Dọn dẹp thư mục build cũ
-echo "🧹 Dọn dẹp thư mục build/dist cũ..."
-rm -rf build dist
+rm -rf build dist || (sleep 1 && rm -rf build dist) || true
 
 # 4. Chạy PyInstaller
 echo "🚀 Đang đóng gói Vietsub AI với PyInstaller..."

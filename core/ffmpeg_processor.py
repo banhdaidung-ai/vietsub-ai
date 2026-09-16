@@ -24,16 +24,20 @@ class FFmpegProcessor:
         self,
         video_path: str,
         srt_path: str,
-        tts_audio_path: str,
-        output_path: str,
+        tts_audio_path: Optional[str] = None,
+        output_path: str = "",
         audio_mode: str = "mix",
         original_volume: float = 0.3,
         tts_volume: float = 1.0,
+        sub_only: bool = False,
+        subtitle_font_size: int = 10,
+        subtitle_margin_v: int = 8,
     ):
         """
         Ghép video cuối cùng:
         - Burn phụ đề SRT tiếng Việt lên video
-        - Mix âm thanh gốc + TTS, hoặc thay hoàn toàn bằng TTS
+        - Nếu sub_only=True: giữ nguyên 100% âm thanh gốc, chỉ gắn phụ đề
+        - Nếu sub_only=False: Mix âm thanh gốc + TTS, hoặc thay hoàn toàn bằng TTS
 
         audio_mode:
             "mix"     — Giữ nhạc nền gốc (original_volume) + giọng Việt (tts_volume)
@@ -49,13 +53,14 @@ class FFmpegProcessor:
 
         subtitle_style = (
             "Fontname=Arial,"
-            "FontSize=22,"
-            "PrimaryColour=&H00FFFFFF,"   # Text trắng
-            "OutlineColour=&H00000000,"   # Viền đen
-            "BackColour=&H80000000,"      # Nền bán trong suốt
-            "Outline=2,"
-            "Shadow=1,"
-            "MarginV=20,"
+            f"FontSize={subtitle_font_size},"
+            "Bold=1,"
+            "PrimaryColour=&H00FFFFFF,"   # Text trắng sáng rõ nét
+            "OutlineColour=&H00000000,"   # Viền đen sắc nét
+            "BackColour=&H00000000,"      # Trong suốt không bị hộp đen thô
+            "Outline=0.8,"                # Viền mảnh sắc nét cho chữ nhỏ
+            "Shadow=0.4,"                 # Đổ bóng nhẹ
+            f"MarginV={subtitle_margin_v},"  # Cách mép đáy (mặc định 8 để nằm dưới phụ đề gốc)
             "Alignment=2"                  # Căn giữa dưới
         )
 
@@ -101,7 +106,42 @@ class FFmpegProcessor:
                     "-b:a", "192k",
                     output_path,
                 ]
-            return subprocess.run(cmd, capture_output=True, text=True)
+        # Chế độ chỉ gắn phụ đề, giữ nguyên âm thanh gốc
+        if sub_only or not tts_audio_path:
+            self._report(0.2, "Đang gắn phụ đề vào video (giữ nguyên 100% âm thanh gốc)...")
+            cmd = [
+                ffmpeg, "-y",
+                "-i", video_path,
+                "-vf", f"subtitles='{escaped_srt}':force_style='{subtitle_style}'",
+                "-c:v", "libx264",
+                "-crf", "23",
+                "-preset", "medium",
+                "-c:a", "copy",
+                output_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Nếu -c:a copy lỗi (ví dụ định dạng âm thanh gốc không tương thích mp4), fallback sang re-encode aac
+            if result.returncode != 0:
+                self._report(0.4, "Đang re-encode âm thanh chuẩn AAC...")
+                cmd_fallback = [
+                    ffmpeg, "-y",
+                    "-i", video_path,
+                    "-vf", f"subtitles='{escaped_srt}':force_style='{subtitle_style}'",
+                    "-c:v", "libx264",
+                    "-crf", "23",
+                    "-preset", "medium",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    output_path,
+                ]
+                result = subprocess.run(cmd_fallback, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                stderr_tail = result.stderr[-1200:] if result.stderr else "Không có thông tin lỗi"
+                raise RuntimeError(f"FFmpeg lỗi khi gắn phụ đề vào video:\n{stderr_tail}")
+
+            self._report(1.0, "Gắn phụ đề hoàn tất!")
+            return
 
         result = run_render(audio_mode)
 

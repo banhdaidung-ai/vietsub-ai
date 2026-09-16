@@ -15,6 +15,10 @@ DEFAULT_CONFIG = {
     "original_volume": 0.3,       # Âm lượng tiếng gốc khi mix
     "tts_volume": 1.0,            # Âm lượng giọng TTS
     "output_dir": str(Path.home() / "Desktop"),
+    "source_language": "zh",      # "zh" (Trung) | "en" (Anh) | "vi" (Việt)
+    "enable_tts": True,           # Có tạo giọng đọc AI hay không
+    "subtitle_font_size": 10,     # Cỡ chữ phụ đề nhỏ gọn tầm 10 (mặc định 10)
+    "subtitle_margin_v": 8,       # Khoảng cách đáy (mặc định 8 để nằm dưới phụ đề gốc)
 }
 
 
