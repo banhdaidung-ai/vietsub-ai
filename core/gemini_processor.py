@@ -236,32 +236,75 @@ class GeminiProcessor:
                 status_msg = "Gemini đang phiên âm và dịch Tiếng Trung → Tiếng Việt..."
             self._report(0.5, status_msg)
 
-            models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
+            # Danh sách model theo thứ tự ưu tiên (2.5-flash ổn định nhất, ít bị quá tải nhất)
+            models_to_try = [
+                "gemini-2.5-flash",
+                "gemini-3.5-flash",
+                "gemini-3.6-flash",
+                "gemini-2.5-pro",
+            ]
             response = None
             last_err = None
-            for model_name in models_to_try:
-                try:
-                    response = self.client.models.generate_content(
-                        model=model_name,
-                        contents=[video_file, prompt],
-                    )
+
+            for m_idx, model_name in enumerate(models_to_try):
+                # Thử tối đa 2 lần cho mỗi model nếu gặp 503 / 429
+                for attempt in range(2):
+                    try:
+                        self._report(
+                            min(0.85, 0.50 + (m_idx * 0.08) + (attempt * 0.04)),
+                            f"Đang phiên âm & dịch với AI ({model_name})...",
+                        )
+                        response = self.client.models.generate_content(
+                            model=model_name,
+                            contents=[video_file, prompt],
+                        )
+                        if response and response.text:
+                            break
+                    except Exception as e:
+                        last_err = e
+                        err_str = str(e)
+
+                        # Nếu API key sai thì ngắt ngay
+                        if "API_KEY_INVALID" in err_str or "401" in err_str or "403" in err_str:
+                            raise ValueError("API Key Gemini không hợp lệ. Vui lòng kiểm tra lại trong phần Cài đặt.")
+
+                        # Nếu lỗi quá tải (503 UNAVAILABLE / 429 / 500), chờ 2s rồi retry 1 lần
+                        is_overloaded = any(
+                            x in err_str
+                            for x in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "504", "DEADLINE_EXCEEDED"]
+                        )
+                        if is_overloaded and attempt == 0:
+                            self._report(
+                                0.55,
+                                f"Model {model_name} đang tải cao (503/429), chờ 2s thử lại...",
+                            )
+                            time.sleep(2)
+                            continue
+
+                        # Nếu hết lượt của model này mà còn model khác, thông báo chuyển model
+                        if m_idx < len(models_to_try) - 1:
+                            next_model = models_to_try[m_idx + 1]
+                            self._report(
+                                0.58,
+                                f"Model {model_name} đang bận, tự động chuyển sang {next_model}...",
+                            )
+                        break
+
+                if response and response.text:
                     break
-                except Exception as e:
-                    last_err = e
-                    err_msg = str(e)
-                    if "404" in err_msg or "NOT_FOUND" in err_msg or "no longer available" in err_msg:
-                        continue
-                    if "RESOURCE_EXHAUSTED" in err_msg or "429" in err_msg:
-                        raise ValueError("Đã vượt hạn ngạch (quota) của Gemini API. Vui lòng thử lại sau vài phút hoặc dùng key khác.")
-                    raise RuntimeError(f"Lỗi khi gọi Gemini xử lý video: {e}")
-            if response is None:
-                raise RuntimeError(f"Lỗi khi gọi Gemini xử lý video: {last_err}")
 
             # Dọn dẹp file đã upload trên Gemini
             try:
                 self.client.files.delete(name=video_file.name)
             except Exception:
                 pass  # Không quan trọng nếu cleanup thất bại
+
+            if response is None or not getattr(response, "text", None):
+                raise RuntimeError(
+                    f"Máy chủ Gemini đang quá tải tạm thời (503/Demand Spike): {last_err}.\n"
+                    "Hệ thống đã tự động thử các model dự phòng. "
+                    "Sếp vui lòng nhấn 'BẮT ĐẦU DỊCH' thử lại sau vài giây hoặc kiểm tra lại kết nối mạng."
+                )
 
             self._report(0.9, "Đã tạo phụ đề xong, đang chuẩn hóa SRT...")
 
