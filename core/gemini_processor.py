@@ -127,9 +127,11 @@ class GeminiProcessor:
     def __init__(
         self,
         api_key: str,
+        preferred_model: Optional[str] = "gemini-3.8-flash",
         progress_callback: Optional[Callable[[float, str], None]] = None,
     ):
         self.client = genai.Client(api_key=api_key)
+        self.preferred_model = preferred_model or "gemini-3.8-flash"
         self.progress_callback = progress_callback
 
     def _report(self, pct: float, message: str):
@@ -236,13 +238,20 @@ class GeminiProcessor:
                 status_msg = "Gemini đang phiên âm và dịch Tiếng Trung → Tiếng Việt..."
             self._report(0.5, status_msg)
 
-            # Danh sách model theo thứ tự ưu tiên (2.5-flash ổn định nhất, ít bị quá tải nhất)
-            models_to_try = [
-                "gemini-2.5-flash",
-                "gemini-3.5-flash",
+            # Danh sách model theo thứ tự ưu tiên: Ưu tiên Gemini 3.8 Flash mới nhất, thông minh nhất
+            all_candidate_models = [
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
                 "gemini-3.6-flash",
-                "gemini-2.5-pro",
+                "gemini-3.5-flash",
+                "gemini-2.5-flash",
             ]
+            pref = getattr(self, "preferred_model", "gemini-3.8-flash")
+            if pref and pref != "auto" and pref in all_candidate_models:
+                models_to_try = [pref] + [m for m in all_candidate_models if m != pref]
+            else:
+                models_to_try = all_candidate_models
+
             response = None
             last_err = None
 

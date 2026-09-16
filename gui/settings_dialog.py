@@ -103,6 +103,42 @@ class SettingsDialog(ctk.CTkToplevel):
         )
         self.btn_toggle_eye.pack(side="right")
 
+        # Model Selector
+        model_frame = ctk.CTkFrame(card_ai, fg_color="transparent")
+        model_frame.pack(fill="x", padx=16, pady=(0, 14))
+
+        ctk.CTkLabel(
+            model_frame,
+            text="Phiên bản Gemini AI ưu tiên:",
+            font=("Arial", 12),
+            text_color="#94A3B8",
+        ).pack(anchor="w", pady=(0, 4))
+
+        self.model_map = {
+            "⚡ Gemini 3.8 Flash (Mới nhất, siêu nhanh & thông minh)": "gemini-3.8-flash",
+            "🚀 Gemini 3.7 Flash (Thế hệ mới 3.7)": "gemini-3.7-flash",
+            "✨ Gemini 3.6 Flash (Tốc độ cao 3.6)": "gemini-3.6-flash",
+            "🛡️ Gemini 2.5 Flash (Bản chuẩn, ít nghẽn tải nhất)": "gemini-2.5-flash",
+            "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5)": "auto",
+        }
+        self.reverse_model_map = {v: k for k, v in self.model_map.items()}
+
+        current_model = self.config.get("gemini_model", "gemini-3.8-flash")
+        current_model_display = self.reverse_model_map.get(
+            current_model, "⚡ Gemini 3.8 Flash (Mới nhất, siêu nhanh & thông minh)"
+        )
+
+        self.model_display_var = ctk.StringVar(value=current_model_display)
+        self.model_combo = ctk.CTkComboBox(
+            model_frame,
+            values=list(self.model_map.keys()),
+            variable=self.model_display_var,
+            height=34,
+            corner_radius=8,
+            state="readonly",
+        )
+        self.model_combo.pack(fill="x")
+
         # ─── SECTION 2: TTS & AUDIO ───
         card_audio = ctk.CTkFrame(scroll_container, corner_radius=12, border_width=1, border_color="#334155")
         card_audio.pack(fill="x", pady=8)
@@ -417,7 +453,11 @@ class SettingsDialog(ctk.CTkToplevel):
         selected_display = self.voice_display_var.get()
         real_voice = self.voice_map.get(selected_display, "vi-VN-HoaiMyNeural")
 
+        selected_model_display = self.model_display_var.get()
+        real_model = self.model_map.get(selected_model_display, "gemini-3.8-flash")
+
         self.config["gemini_api_key"] = self.api_entry.get().strip()
+        self.config["gemini_model"] = real_model
         self.config["tts_voice"] = real_voice
         self.config["audio_mode"] = self.audio_mode_var.get()
         self.config["original_volume"] = round(float(self.org_vol_slider.get()), 2)

@@ -10,6 +10,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "gemini_api_key": "",
+    "gemini_model": "gemini-3.8-flash",  # "gemini-3.8-flash" | "gemini-3.7-flash" | "gemini-3.6-flash" | "gemini-2.5-flash" | "auto"
     "tts_voice": "vi-VN-HoaiMyNeural",
     "audio_mode": "mix",          # "mix" | "replace"
     "original_volume": 0.3,       # Âm lượng tiếng gốc khi mix

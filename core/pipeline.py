@@ -122,6 +122,7 @@ class Pipeline:
 
         gemini = GeminiProcessor(
             api_key=config["gemini_api_key"],
+            preferred_model=config.get("gemini_model", "gemini-3.8-flash"),
             progress_callback=self._make_progress_cb(0.10, 0.50),
         )
         srt_content = gemini.process_video(video_path, source_lang=source_lang)
