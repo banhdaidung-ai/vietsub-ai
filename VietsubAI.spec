@@ -17,7 +17,7 @@ hiddenimports = [
     'pydantic.deprecated.decorator',
 ]
 
-for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp']:
+for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi']:
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
@@ -123,8 +123,8 @@ if is_mac:
             'CFBundleName': 'Vietsub AI',
             'CFBundleDisplayName': 'Vietsub AI',
             'CFBundleIdentifier': 'com.vietsubai.app',
-            'CFBundleVersion': '1.0.6',
-            'CFBundleShortVersionString': '1.0.6',
+            'CFBundleVersion': '1.0.7',
+            'CFBundleShortVersionString': '1.0.7',
             'NSHighResolutionCapable': True,
             'LSMinimumSystemVersion': '11.0',
             'NSHumanReadableCopyright': 'Copyright © 2026 Vietsub AI',

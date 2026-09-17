@@ -34,6 +34,20 @@ class VideoDownloader:
         """
         self._downloaded_path = None
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+        url_clean = url.strip()
+
+        # ── HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) không watermark ──
+        from core.douyin import DouyinDownloader
+        if DouyinDownloader.is_douyin_url(url_clean):
+            douyin_dl = DouyinDownloader()
+            self._downloaded_path = douyin_dl.download_video(
+                raw_url=url_clean,
+                output_dir=output_dir,
+                quality=quality,
+                progress_callback=self.progress_callback,
+                is_cancelled=self.is_cancelled,
+            )
+            return self._downloaded_path
 
         def progress_hook(d: dict):
             if self.is_cancelled and self.is_cancelled():
@@ -98,27 +112,15 @@ class VideoDownloader:
         if node_bin:
             ydl_opts["js_runtimes"] = {"node": {"path": node_bin}}
 
-        # Chuẩn hóa link nếu là Douyin modal_id
-        if "douyin.com" in url and "modal_id=" in url:
-            m = re.search(r"modal_id=(\d+)", url)
-            if m:
-                url = f"https://www.douyin.com/video/{m.group(1)}"
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+                info = ydl.extract_info(url_clean, download=True)
 
                 if self._downloaded_path is None:
                     self._downloaded_path = ydl.prepare_filename(info)
         except (InterruptedError, KeyboardInterrupt):
             raise InterruptedError("Tiến trình tải đã bị hủy.")
         except Exception as e:
-            err_str = str(e)
-            if "douyin" in url.lower() or "douyin" in err_str.lower():
-                raise RuntimeError(
-                    "Douyin chặn tải tự động qua link (yêu cầu xác thực chống bot).\n"
-                    "👉 Sếp vui lòng tải video về máy trước (hoặc dùng nút tải của Cốc Cốc/trình duyệt), sau đó chọn file ở tab 'File Video' để dịch mượt mà 100% nhé ạ!"
-                )
             raise RuntimeError(f"Không thể tải video từ link: {e}")
 
         # Fallback: extension có thể đổi sau khi merge
@@ -253,6 +255,20 @@ class VideoDownloader:
             audio_format = "mp3"
 
         url_clean = url.strip()
+
+        # ── 0. HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) ──
+        from core.douyin import DouyinDownloader
+        if DouyinDownloader.is_douyin_url(url_clean):
+            douyin_dl = DouyinDownloader()
+            self._downloaded_path = douyin_dl.download_audio(
+                raw_url=url_clean,
+                output_dir=output_dir,
+                audio_format=audio_format,
+                bitrate=bitrate,
+                progress_callback=self.progress_callback,
+                is_cancelled=self.is_cancelled,
+            )
+            return self._downloaded_path
 
         # ── 1. HỖ TRỢ CHUYÊN BIỆT: Epidemic Sound (www.epidemicsound.com) ──
         if "epidemicsound.com" in url_clean.lower() and "audiocdn.epidemicsound.com" not in url_clean:
@@ -414,11 +430,6 @@ class VideoDownloader:
                     "👉 Cách tải nhạc Artlist về máy dễ nhất:\n"
                     "1. Mở bài nhạc trên trình duyệt (Cốc Cốc/Chrome) > bấm F12 > chọn tab Network > tìm '.aac' hoặc '.mp3' > copy link đó dán vào đây để app tải và xuất MP3 320kbps!\n"
                     "2. Hoặc tìm tên bài hát trên YouTube / SoundCloud rồi dán link vào đây, app sẽ tải trọn vẹn chất lượng cao nhất cho Sếp ngay lập tức!"
-                )
-            if "douyin" in url_clean.lower() or "douyin" in err_str.lower():
-                raise RuntimeError(
-                    "Douyin chặn tải tự động qua link (yêu cầu xác thực chống bot).\n"
-                    "👉 Sếp vui lòng tải video về máy trước, sau đó chọn file ở tab 'File Video' và bấm '🎵 Trích Xuất Audio' nhé ạ!"
                 )
             raise RuntimeError(f"Không thể tải âm thanh từ link: {e}")
 

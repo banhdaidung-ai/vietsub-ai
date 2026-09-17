@@ -357,7 +357,7 @@ class AppWindow(ctk.CTk):
         self.url_entry = ctk.CTkEntry(
             url_input_box,
             textvariable=self.url_var,
-            placeholder_text="Dán link TikTok, YouTube, Facebook, SoundCloud, Artlist hoặc direct audio vào đây...",
+            placeholder_text="Dán link Douyin, TikTok, YouTube, Facebook, SoundCloud, Artlist...",
             height=38,
             corner_radius=8,
             fg_color=BG_INSET,
@@ -1050,7 +1050,9 @@ class AppWindow(ctk.CTk):
         try:
             text = self.clipboard_get().strip()
             if text:
-                self.url_var.set(text)
+                from core.douyin import DouyinDownloader
+                clean_url = DouyinDownloader.extract_url(text)
+                self.url_var.set(clean_url if clean_url else text)
         except Exception:
             pass
 
@@ -1515,6 +1517,12 @@ class AppWindow(ctk.CTk):
 
         is_url = self.tabview.get().startswith("🌐")
         source = self.url_var.get().strip() if is_url else self.file_path_var.get().strip()
+        if is_url and source:
+            from core.douyin import DouyinDownloader
+            clean_url = DouyinDownloader.extract_url(source)
+            if clean_url:
+                source = clean_url
+                self.url_var.set(clean_url)
 
         if not source:
             self._log_msg("❌ Lỗi: Vui lòng chọn file video hoặc dán link online.")
@@ -1589,8 +1597,15 @@ class AppWindow(ctk.CTk):
 
     def _start_download_only(self):
         url = self.url_var.get().strip()
+        if url:
+            from core.douyin import DouyinDownloader
+            clean_url = DouyinDownloader.extract_url(url)
+            if clean_url:
+                url = clean_url
+                self.url_var.set(clean_url)
+
         if not url:
-            self._log_msg("❌ Lỗi: Vui lòng dán link video (TikTok, Facebook, YouTube...) vào ô nhập.")
+            self._log_msg("❌ Lỗi: Vui lòng dán link video (Douyin, TikTok, Facebook, YouTube...) vào ô nhập.")
             return
 
         ok, msg = check_ffmpeg()
@@ -1660,10 +1675,17 @@ class AppWindow(ctk.CTk):
         threading.Thread(target=run_dl, daemon=True).start()
 
     def _start_audio_download(self):
-        """Tải riêng file âm thanh/nhạc từ link online (YouTube, TikTok, Facebook, SoundCloud, Artlist...)."""
+        """Tải riêng file âm thanh/nhạc từ link online (Douyin, YouTube, TikTok, Facebook, SoundCloud, Artlist...)."""
         url = self.url_var.get().strip()
+        if url:
+            from core.douyin import DouyinDownloader
+            clean_url = DouyinDownloader.extract_url(url)
+            if clean_url:
+                url = clean_url
+                self.url_var.set(clean_url)
+
         if not url:
-            self._log_msg("❌ Lỗi: Vui lòng dán link video hoặc link bài nhạc vào ô nhập.")
+            self._log_msg("❌ Lỗi: Vui lòng dán link video hoặc link bài nhạc (Douyin, TikTok, YouTube...) vào ô nhập.")
             return
 
         ok, msg = check_ffmpeg()
@@ -1825,8 +1847,15 @@ class AppWindow(ctk.CTk):
     def _start_url_download_and_separate(self):
         """Tải bài nhạc/video từ link online rồi tự động chạy Demucs AI để tách lời và beat."""
         url = self.url_var.get().strip()
+        if url:
+            from core.douyin import DouyinDownloader
+            clean_url = DouyinDownloader.extract_url(url)
+            if clean_url:
+                url = clean_url
+                self.url_var.set(clean_url)
+
         if not url:
-            self._log_msg("❌ Lỗi: Vui lòng dán link video hoặc bài nhạc vào ô nhập.")
+            self._log_msg("❌ Lỗi: Vui lòng dán link video hoặc bài nhạc (Douyin, YouTube, TikTok...) vào ô nhập.")
             return
 
         ok, msg = check_ffmpeg()
@@ -2073,6 +2102,7 @@ class AppWindow(ctk.CTk):
                 elif msg_type == "download_success":
                     fp = msg["file_path"]
                     fn = Path(fp).name
+                    sz = _fmt_size(fp)
                     self._log_msg("\n" + "─" * 48)
                     self._log_msg("🎉 TẢI VIDEO GỐC THÀNH CÔNG!")
                     self._log_msg(f"   🎬 File: {fn}")
@@ -2084,9 +2114,28 @@ class AppWindow(ctk.CTk):
                     self.pct_badge.configure(text="100%")
                     self.status_label.configure(text="✨ Đã tải xong video gốc.")
 
+                    # Hiển thị Popup hoàn tất cho video gốc
+                    self.after(
+                        300,
+                        lambda p=fp, n=fn, s=sz: CompletionDialog(
+                            self,
+                            video_path=p,
+                            title_text="TẢI VIDEO GỐC THÀNH CÔNG!",
+                            subtitle_text="Video gốc chất lượng cao nhất đã được tải về và lưu an toàn.",
+                            custom_rows=[
+                                ("🎬", "File video gốc:", f"{n}  ({s})", TEXT_PRIMARY),
+                                ("📁", "Thư mục lưu:", str(Path(p).parent), TEXT_SECONDARY),
+                                ("⏱️", "Thời gian tải:", self._last_elapsed_str or "Hoàn tất", APPLE_GREEN),
+                            ],
+                            elapsed_str=self._last_elapsed_str or "00:00",
+                            on_new_video=self._reset_for_new_video,
+                        ),
+                    )
+
                 elif msg_type in ("audio_download_success", "audio_extract_success"):
                     fp = msg["file_path"]
                     fn = Path(fp).name
+                    sz = _fmt_size(fp)
                     is_extract = (msg_type == "audio_extract_success")
                     title = "TRÍCH XUẤT ÂM THANH" if is_extract else "TẢI NHẠC / AUDIO"
                     self._log_msg("\n" + "─" * 48)
@@ -2098,6 +2147,24 @@ class AppWindow(ctk.CTk):
                     self.progress_bar.set(1.0)
                     self.pct_badge.configure(text="100%")
                     self.status_label.configure(text=f"✨ Đã hoàn thành {title.lower()}.")
+
+                    # Hiển thị Popup hoàn tất cho audio
+                    self.after(
+                        300,
+                        lambda p=fp, n=fn, s=sz, t=title: CompletionDialog(
+                            self,
+                            video_path=p,
+                            title_text=f"{t} THÀNH CÔNG!",
+                            subtitle_text="File âm thanh chất lượng cao đã sẵn sàng để sử dụng.",
+                            custom_rows=[
+                                ("🎵", "File âm thanh:", f"{n}  ({s})", APPLE_PURPLE),
+                                ("📁", "Thư mục lưu:", str(Path(p).parent), TEXT_SECONDARY),
+                                ("⏱️", "Thời gian tải:", self._last_elapsed_str or "Hoàn tất", APPLE_GREEN),
+                            ],
+                            elapsed_str=self._last_elapsed_str or "00:00",
+                            on_new_video=self._reset_for_new_video,
+                        ),
+                    )
 
                 elif msg_type == "audio_separate_success":
                     results = msg.get("results", {})
