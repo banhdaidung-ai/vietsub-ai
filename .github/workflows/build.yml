@@ -101,3 +101,48 @@ jobs:
         with:
           name: VietsubAI-Windows
           path: dist/VietsubAI-Windows.zip
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: VietsubAI-macOS
+          path: release_assets/
+
+      - name: Download Windows Zip
+        uses: actions/download-artifact@v4
+        with:
+          name: VietsubAI-Windows
+          path: release_assets/
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.1' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.1 — Đã Nhúng Sẵn FFmpeg' }}
+          body: |
+            ## 🎉 Bản Phát Hành Vietsub AI
+
+            Phiên bản nâng cấp giải quyết triệt để vấn đề giải mã video và phụ đề:
+            - **Đã nhúng sẵn FFmpeg & FFprobe:** Cả bản Windows (`VietsubAI-Windows.zip`) và macOS (`VietsubAI.dmg`) đã được đóng gói sẵn bộ giải mã FFmpeg tĩnh, tải về giải nén là chạy ngay 100% offline, không bao giờ bị báo thiếu FFmpeg.
+            - **Tính năng 1-Click Tải FFmpeg:** Tích hợp hộp thoại tự động tải FFmpeg trực tiếp trong giao diện ứng dụng nếu cần cập nhật lại.
+            - **Bảo vệ hệ thống:** Khắc phục hoàn toàn lỗi crash stream khi chạy ứng dụng GUI trên Windows.
+            - **Mục quản lý FFmpeg:** Hiển thị trực quan đường dẫn và trạng thái FFmpeg trong menu Cài đặt.
+
+            ### 📥 Tải xuống cài đặt:
+            - **Windows:** Tải file `VietsubAI-Windows.zip` bên dưới, giải nén và mở file `VietsubAI.exe` để chạy.
+            - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo ứng dụng vào thư mục `Applications`.
+          draft: false
+          prerelease: false
+          files: |
+            release_assets/VietsubAI.dmg
+            release_assets/VietsubAI-Windows.zip
