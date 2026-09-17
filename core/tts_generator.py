@@ -146,21 +146,11 @@ class TTSGenerator:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def _get_audio_duration_ms(self, audio_path: str) -> int:
-        """Lấy thời lượng audio (ms) dùng ffprobe."""
-        ffprobe = get_ffprobe_path() or "ffprobe"
+        """Lấy thời lượng audio (ms) dùng ffprobe hoặc FFmpeg."""
         try:
-            result = subprocess.run(
-                [
-                    ffprobe, "-v", "quiet",
-                    "-print_format", "json",
-                    "-show_format",
-                    audio_path,
-                ],
-                capture_output=True,
-                text=True,
-            )
-            data = json.loads(result.stdout)
-            return int(float(data["format"]["duration"]) * 1000)
+            from utils.ffmpeg_check import get_video_duration
+            sec = get_video_duration(audio_path)
+            return int(sec * 1000)
         except Exception:
             return 0
 

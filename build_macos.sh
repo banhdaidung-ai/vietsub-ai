@@ -21,14 +21,14 @@ fi
 echo "📦 Kiểm tra PyInstaller..."
 uv pip install --python "$PYTHON_BIN" pyinstaller
 
-# 3. Chuẩn bị FFmpeg cho macOS
+# 3. Chuẩn bị FFmpeg cho macOS (chỉ cần ffmpeg, không cần ffprobe)
 echo "⚡ Đang chuẩn bị bộ giải mã FFmpeg cho macOS..."
 mkdir -p bin
-"$PYTHON_BIN" -c "import static_ffmpeg.run; ffmpeg, ffprobe = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise(); import shutil; shutil.copy(ffmpeg, 'bin/ffmpeg'); shutil.copy(ffprobe, 'bin/ffprobe')" 2>/dev/null || true
+"$PYTHON_BIN" -c "import static_ffmpeg.run; ffmpeg, _ = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise(); import shutil; shutil.copy(ffmpeg, 'bin/ffmpeg');" 2>/dev/null || true
 if [ ! -f "bin/ffmpeg" ] && which ffmpeg >/dev/null 2>&1; then
     cp "$(which ffmpeg)" bin/ffmpeg 2>/dev/null || true
-    cp "$(which ffprobe)" bin/ffprobe 2>/dev/null || true
 fi
+rm -f bin/ffprobe bin/ffprobe.exe 2>/dev/null || true
 
 # 4. Dọn dẹp thư mục build cũ
 echo "🧹 Dọn dẹp thư mục build cũ..."
@@ -43,12 +43,17 @@ if [ ! -d "dist/VietsubAI.app" ]; then
     exit 1
 fi
 
-if [ -f "bin/ffmpeg" ]; then
+# Đảm bảo chỉ có DUY NHẤT 1 file ffmpeg trong toàn bộ bundle, khử trùng lặp triệt để
+if [ -f "dist/VietsubAI.app/Contents/Frameworks/ffmpeg" ]; then
+    echo "⚡ FFmpeg đã có sẵn trong Contents/Frameworks/ffmpeg."
+    rm -f "dist/VietsubAI.app/Contents/MacOS/ffmpeg" 2>/dev/null || true
+elif [ -f "bin/ffmpeg" ]; then
     cp bin/ffmpeg "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
-    cp bin/ffprobe "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
 fi
+# Loại bỏ triệt để mọi file ffprobe thừa nếu có trong bundle
+find "dist/VietsubAI.app" -name "*ffprobe*" -delete 2>/dev/null || true
 
-echo "✅ Đã tạo thành công: dist/VietsubAI.app (kèm sẵn FFmpeg)"
+echo "✅ Đã tạo thành công: dist/VietsubAI.app (Dung lượng siêu nhẹ, 1 bản FFmpeg duy nhất)"
 
 # 5. Đóng gói thành file đĩa cài đặt .dmg (Drag & Drop vào Applications)
 echo "💿 Đang tạo file cài đặt dist/VietsubAI.dmg..."

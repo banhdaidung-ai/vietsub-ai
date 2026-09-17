@@ -17,11 +17,15 @@ hiddenimports = [
     'pydantic.deprecated.decorator',
 ]
 
-for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'static_ffmpeg', 'yt_dlp']:
+for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp']:
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
+
+# Lọc bỏ các module test và file rác của thư viện để giảm dung lượng
+hiddenimports = [h for h in set(hiddenimports) if not any(t in h for t in ['.tests', '.test_', 'testing', 'tests'])]
+datas = [d for d in datas if not any(t in str(d[0]).replace('\\', '/') for t in ['/tests/', '/test/', '/testing/'])]
 
 # Thêm thư mục assets (chứa icon, hình ảnh)
 if os.path.exists('assets'):
@@ -34,13 +38,13 @@ try:
 except Exception:
     pass
 
-# Tự động nhúng ffmpeg / ffprobe vào thư mục gốc của bản build nếu có sẵn
+# Tự động nhúng DUY NHẤT 1 bản ffmpeg (không cần ffprobe) vào thư mục gốc của bản build nếu có sẵn
 for search_dir in ['.', 'bin', 'assets/bin']:
-    for name in ['ffmpeg', 'ffprobe']:
-        for ext in ['.exe', '']:
-            cand = os.path.join(search_dir, f"{name}{ext}")
-            if os.path.isfile(cand) and not any(cand == b[0] for b in binaries):
-                binaries.append((cand, '.'))
+    for ext in ['.exe', '']:
+        cand = os.path.join(search_dir, f"ffmpeg{ext}")
+        if os.path.isfile(cand) and not any(cand == b[0] for b in binaries):
+            binaries.append((cand, '.'))
+            break
 
 a = Analysis(
     ['main.py'],
@@ -51,7 +55,12 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter.test', 'unittest', 'test'],
+    excludes=[
+        'tkinter.test', 'unittest', 'test',
+        'email.test', 'xmlrpc', 'pydoc', 'sqlite3',
+        'matplotlib', 'scipy', 'numpy', 'pandas',
+        'static_ffmpeg',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -114,8 +123,8 @@ if is_mac:
             'CFBundleName': 'Vietsub AI',
             'CFBundleDisplayName': 'Vietsub AI',
             'CFBundleIdentifier': 'com.vietsubai.app',
-            'CFBundleVersion': '1.0.3',
-            'CFBundleShortVersionString': '1.0.3',
+            'CFBundleVersion': '1.0.4',
+            'CFBundleShortVersionString': '1.0.4',
             'NSHighResolutionCapable': True,
             'LSMinimumSystemVersion': '11.0',
             'NSHumanReadableCopyright': 'Copyright © 2026 Vietsub AI',

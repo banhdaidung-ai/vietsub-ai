@@ -5,6 +5,7 @@ utils/ffmpeg_check.py — Kiểm tra và tự động cấu hình FFmpeg cho h�
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -84,6 +85,7 @@ def _resolve_binary(name: str) -> Optional[str]:
             exe_dir / "ffmpeg",
             exe_dir.parent / "Resources",
             exe_dir.parent / "MacOS",
+            exe_dir.parent / "Frameworks",
         ])
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
@@ -91,6 +93,7 @@ def _resolve_binary(name: str) -> Optional[str]:
                 Path(meipass),
                 Path(meipass) / "_internal",
                 Path(meipass) / "bin",
+                Path(meipass) / "Frameworks",
             ])
     else:
         project_root = Path(__file__).resolve().parent.parent
@@ -324,45 +327,70 @@ def check_ffmpeg() -> Tuple[bool, str]:
 
 
 def get_video_duration(video_path: str) -> float:
-    """Lấy thời lượng video (giây) dùng ffprobe."""
-    ffprobe = get_ffprobe_path() or "ffprobe"
-    result = subprocess.run(
-        [
-            ffprobe, "-v", "error",
-            "-show_entries", "format=duration:stream=duration",
-            "-of", "json",
-            video_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0 and result.stdout:
+    """
+    Lấy thời lượng video (giây).
+    Ưu tiên đọc trực tiếp và siêu tốc qua FFmpeg -i (không cần ffprobe).
+    Fallback sang ffprobe nếu có sẵn.
+    """
+    # 1. Đọc thời lượng trực tiếp qua FFmpeg -i (nhanh, chuẩn và không cần thêm file ffprobe)
+    ffmpeg = get_ffmpeg_path() or "ffmpeg"
+    try:
+        res = subprocess.run(
+            [ffmpeg, "-i", video_path],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", res.stderr)
+        if m:
+            h, mn, s = float(m.group(1)), float(m.group(2)), float(m.group(3))
+            return h * 3600 + mn * 60 + s
+    except Exception:
+        pass
+
+    # 2. Fallback sang ffprobe nếu trên máy có sẵn
+    ffprobe = get_ffprobe_path()
+    if ffprobe:
         try:
-            data = json.loads(result.stdout)
-            if "format" in data and "duration" in data["format"]:
-                return float(data["format"]["duration"])
-            for st in data.get("streams", []):
-                if "duration" in st:
-                    return float(st["duration"])
+            result = subprocess.run(
+                [
+                    ffprobe, "-v", "error",
+                    "-show_entries", "format=duration:stream=duration",
+                    "-of", "json",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0 and result.stdout:
+                data = json.loads(result.stdout)
+                if "format" in data and "duration" in data["format"]:
+                    return float(data["format"]["duration"])
+                for st in data.get("streams", []):
+                    if "duration" in st:
+                        return float(st["duration"])
         except Exception:
             pass
 
-    # Fallback trực tiếp nếu output format json không đủ trường
-    result_simple = subprocess.run(
-        [
-            ffprobe, "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            video_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result_simple.returncode == 0 and result_simple.stdout.strip():
         try:
-            return float(result_simple.stdout.strip())
-        except ValueError:
+            result_simple = subprocess.run(
+                [
+                    ffprobe, "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result_simple.returncode == 0 and result_simple.stdout.strip():
+                return float(result_simple.stdout.strip())
+        except Exception:
             pass
 
-    raise RuntimeError("Không thể xác định thời lượng video qua ffprobe.")
+    raise RuntimeError("Không thể xác định thời lượng video qua FFmpeg.")
 

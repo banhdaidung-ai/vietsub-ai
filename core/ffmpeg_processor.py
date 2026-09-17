@@ -13,22 +13,37 @@ from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
 
 
 def check_has_audio(video_path: str) -> bool:
-    """Kiểm tra video có luồng âm thanh không."""
+    """Kiểm tra video có luồng âm thanh không (hỗ trợ ffmpeg trực tiếp, không cần ffprobe)."""
     try:
-        ffprobe = get_ffprobe_path() or "ffprobe"
+        # 1. Thử qua ffprobe nếu có sẵn
+        ffprobe = get_ffprobe_path()
+        if ffprobe:
+            res = subprocess.run(
+                [
+                    ffprobe, "-v", "error",
+                    "-select_streams", "a",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if res.returncode == 0:
+                return "audio" in res.stdout.lower()
+
+        # 2. Hoặc kiểm tra trực tiếp qua ffmpeg -i
+        ffmpeg = get_ffmpeg_path() or "ffmpeg"
         res = subprocess.run(
-            [
-                ffprobe, "-v", "error",
-                "-select_streams", "a",
-                "-show_entries", "stream=codec_type",
-                "-of", "csv=p=0",
-                video_path,
-            ],
+            [ffmpeg, "-i", video_path],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
         )
-        return "audio" in res.stdout.lower()
+        return "Audio:" in res.stderr
     except Exception:
         return True
 
