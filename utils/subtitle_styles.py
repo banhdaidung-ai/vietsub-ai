@@ -43,8 +43,25 @@ CAPCUT_SUBTITLE_STYLES: Dict[str, Dict[str, Any]] = {
     },
     "capcut_blackbox": {
         "id": "capcut_blackbox",
-        "name": "⬛ CapCut Hộp Nền Đen (Modern Box)",
-        "desc": "Chữ trắng nằm trong hộp nền mờ sang trọng, phong cách Vlog / Podcast",
+        "name": "⬛ CapCut Nền Đen Xám (Trending Box)",
+        "desc": "Chữ trắng đậm trên hộp nền đen xám (#131317), phong cách tin tức công nghệ / podcast CapCut",
+        "font_name": "Arial",
+        "bold": 1,
+        "italic": 0,
+        "primary_color": "&H00FFFFFF",   # Trắng tinh khiết
+        "outline_color": "&H00171313",   # Viền hộp đen xám đồng điệu
+        "back_color": "&H00171313",      # Nền đen xám nguyên bản chuẩn ảnh mẫu (#131317)
+        "border_style": 3,               # 3 = Hộp nền (Opaque Box background)
+        "outline_width": 3.5,            # Độ dày đệm hộp chuẩn CapCut
+        "shadow_depth": 0.0,
+        "ui_fg": "#FFFFFF",
+        "ui_bg": "#131317",
+        "ui_border": "#3B4252",
+    },
+    "capcut_translucent_box": {
+        "id": "capcut_translucent_box",
+        "name": "🔳 CapCut Hộp Đen Mờ (Translucent)",
+        "desc": "Chữ trắng nằm trong hộp nền đen mờ bán trong suốt, phong cách Vlog / Điện ảnh",
         "font_name": "Arial",
         "bold": 1,
         "italic": 0,
@@ -52,10 +69,10 @@ CAPCUT_SUBTITLE_STYLES: Dict[str, Dict[str, Any]] = {
         "outline_color": "&H50000000",   # Bo nhẹ viền hộp
         "back_color": "&H70000000",      # Hộp nền đen mờ sang trọng
         "border_style": 3,               # 3 = Hộp nền (Opaque Box background)
-        "outline_width": 2.0,            # Độ dày đệm hộp
+        "outline_width": 2.2,            # Độ dày đệm hộp
         "shadow_depth": 0.0,
         "ui_fg": "#FFFFFF",
-        "ui_bg": "#000000",
+        "ui_bg": "#1E2028",
         "ui_border": "#475569",
     },
     "capcut_cyan": {

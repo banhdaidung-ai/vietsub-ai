@@ -45,7 +45,7 @@ def test_get_style_display_names():
     assert isinstance(names, list)
     assert len(names) == len(CAPCUT_SUBTITLE_STYLES)
     assert any("Vàng Chanh" in name for name in names)
-    assert any("Hộp Nền Đen" in name for name in names)
+    assert any("Nền Đen Xám" in name for name in names)
 
 
 def test_get_preset_by_name():
@@ -62,7 +62,8 @@ def test_get_preset_by_name():
 def test_get_preset_by_id():
     p_box = get_preset_by_id("capcut_blackbox")
     assert p_box["id"] == "capcut_blackbox"
-    assert p_box["border_style"] == 3  # Hộp nền mờ
+    assert p_box["border_style"] == 3  # Hộp nền mờ/đen xám
+    assert p_box["back_color"] == "&H00171313"
 
     # Fallback khi ID không tồn tại
     p_invalid = get_preset_by_id("invalid_xyz")
@@ -78,11 +79,11 @@ def test_build_ffmpeg_subtitle_style():
     assert "MarginV=15" in style_yellow
     assert "Alignment=2" in style_yellow
 
-    # Test preset hộp đen (BorderStyle=3)
+    # Test preset hộp đen xám (BorderStyle=3)
     style_blackbox = build_ffmpeg_subtitle_style("capcut_blackbox", font_size=14, margin_v=20)
     assert "FontSize=14" in style_blackbox
     assert "BorderStyle=3" in style_blackbox
-    assert "BackColour=&H70000000" in style_blackbox
+    assert "BackColour=&H00171313" in style_blackbox
     assert "MarginV=20" in style_blackbox
 
 
