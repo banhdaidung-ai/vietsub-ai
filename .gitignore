@@ -29,6 +29,7 @@ wheels/
 *.spec.bak
 
 # App / Logs / Temp files
+bin/
 logs/
 *.log
 temp/

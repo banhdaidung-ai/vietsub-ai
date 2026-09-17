@@ -6,6 +6,18 @@ import os
 import sys
 from pathlib import Path
 
+# Bảo vệ sys.stdout và sys.stderr khi đóng gói dạng GUI không có console trên Windows
+if sys.stdout is None:
+    try:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        pass
+if sys.stderr is None:
+    try:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        pass
+
 # Kiểm tra nếu đang chạy bằng Python cũ của macOS (Tk 8.5 gây lỗi màn hình trắng trong CustomTkinter)
 # Tự động chuyển hướng sang môi trường Python hiện đại trong .venv (Tk 9.0)
 if not getattr(sys, "frozen", False):

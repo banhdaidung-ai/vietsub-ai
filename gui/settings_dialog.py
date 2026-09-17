@@ -8,7 +8,9 @@ from typing import Callable
 
 import customtkinter as ctk
 
+from gui.ffmpeg_download_dialog import FFmpegDownloadDialog
 from utils.config import save_config
+from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -373,6 +375,43 @@ class SettingsDialog(ctk.CTkToplevel):
             command=self._browse_out_dir,
         ).pack(side="right")
 
+        # ─── SECTION 5: FFMPEG ENGINE ───
+        card_ffmpeg = ctk.CTkFrame(scroll_container, corner_radius=12, border_width=1, border_color="#334155")
+        card_ffmpeg.pack(fill="x", pady=8)
+
+        ctk.CTkLabel(
+            card_ffmpeg,
+            text="⚡ Bộ Giải Mã FFmpeg (Video Engine)",
+            font=("Arial", 14, "bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        ffmpeg_box = ctk.CTkFrame(card_ffmpeg, fg_color="transparent")
+        ffmpeg_box.pack(fill="x", padx=16, pady=(0, 14))
+
+        self.lbl_ffmpeg_status = ctk.CTkLabel(
+            ffmpeg_box,
+            text="Đang kiểm tra...",
+            font=("Arial", 11),
+            text_color="#94A3B8",
+            wraplength=320,
+            justify="left",
+        )
+        self.lbl_ffmpeg_status.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        self.btn_download_ffmpeg = ctk.CTkButton(
+            ffmpeg_box,
+            text="⚡ Tải FFmpeg",
+            width=115,
+            height=36,
+            corner_radius=8,
+            fg_color="#065F46",
+            hover_color="#047857",
+            command=self._open_ffmpeg_download,
+        )
+        self.btn_download_ffmpeg.pack(side="right")
+
+        self._update_ffmpeg_status()
+
         # ─── FOOTER ACTIONS ───
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(10, 20))
@@ -469,3 +508,30 @@ class SettingsDialog(ctk.CTkToplevel):
         save_config(self.config)
         self.on_save(self.config)
         self.destroy()
+
+    def _update_ffmpeg_status(self):
+        ok, msg = check_ffmpeg()
+        if ok:
+            path = get_ffmpeg_path() or "Hệ thống"
+            self.lbl_ffmpeg_status.configure(
+                text=f"✅ Đã kết nối: {path}",
+                text_color="#34D399",
+            )
+            self.btn_download_ffmpeg.configure(
+                text="🔄 Tải Lại",
+                fg_color="#334155",
+                hover_color="#475569",
+            )
+        else:
+            self.lbl_ffmpeg_status.configure(
+                text="❌ Chưa tìm thấy FFmpeg trên máy (cần thiết để ghép phụ đề và video)",
+                text_color="#FCA5A5",
+            )
+            self.btn_download_ffmpeg.configure(
+                text="⚡ Tải Tự Động",
+                fg_color="#065F46",
+                hover_color="#047857",
+            )
+
+    def _open_ffmpeg_download(self):
+        FFmpegDownloadDialog(self, on_success=self._update_ffmpeg_status)

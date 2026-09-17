@@ -34,6 +34,14 @@ try:
 except Exception:
     pass
 
+# Tự động nhúng ffmpeg / ffprobe vào thư mục gốc của bản build nếu có sẵn
+for search_dir in ['.', 'bin', 'assets/bin']:
+    for name in ['ffmpeg', 'ffprobe']:
+        for ext in ['.exe', '']:
+            cand = os.path.join(search_dir, f"{name}{ext}")
+            if os.path.isfile(cand) and not any(cand == b[0] for b in binaries):
+                binaries.append((cand, '.'))
+
 a = Analysis(
     ['main.py'],
     pathex=['.'],

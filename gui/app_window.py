@@ -15,9 +15,10 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from core.pipeline import Pipeline
+from gui.ffmpeg_download_dialog import FFmpegDownloadDialog
 from gui.settings_dialog import SettingsDialog
 from utils.config import load_config, save_config
-from utils.ffmpeg_check import check_ffmpeg
+from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -126,15 +127,16 @@ class AppWindow(ctk.CTk):
         controls_frame.grid(row=0, column=2, sticky="e")
 
         # Status Badges
-        self.badge_ffmpeg = ctk.CTkLabel(
+        self.badge_ffmpeg = ctk.CTkButton(
             controls_frame,
             text="⚡ FFmpeg: Đang kiểm tra",
             font=("Arial", 11, "bold"),
             fg_color="#1E293B",
+            hover_color="#334155",
             text_color="#94A3B8",
             corner_radius=6,
-            padx=10,
-            pady=4,
+            height=26,
+            command=self._on_ffmpeg_badge_click,
         )
         self.badge_ffmpeg.pack(side="left", padx=4)
 
@@ -619,13 +621,20 @@ class AppWindow(ctk.CTk):
         ok, msg = check_ffmpeg()
         if ok:
             self.badge_ffmpeg.configure(
-                text="⚡ FFmpeg: Sẵn sàng", fg_color="#064E3B", text_color="#34D399"
+                text="⚡ FFmpeg: Sẵn sàng",
+                fg_color="#064E3B",
+                hover_color="#047857",
+                text_color="#34D399",
             )
         else:
             self.badge_ffmpeg.configure(
-                text="❌ FFmpeg: Thiếu", fg_color="#7F1D1D", text_color="#FCA5A5"
+                text="❌ FFmpeg: Thiếu (Bấm tải)",
+                fg_color="#7F1D1D",
+                hover_color="#991B1B",
+                text_color="#FCA5A5",
             )
             self._log_msg(f"❌ {msg}")
+            self._log_msg("💡 Mẹo: Bấm vào huy hiệu '❌ FFmpeg: Thiếu (Bấm tải)' ở góc trên để tải tự động 1-click!")
             self.btn_start.configure(state="disabled")
 
         api_key = self.config.get("gemini_api_key", "").strip()
@@ -638,6 +647,24 @@ class AppWindow(ctk.CTk):
                 text="⚠️ Gemini: Chưa có Key", fg_color="#78350F", text_color="#FCD34D"
             )
             self._log_msg("⚠️ Chưa có Gemini API Key. Vui lòng bấm '⚙️ Cài đặt' để nhập key.")
+
+    def _on_ffmpeg_badge_click(self):
+        ok, msg = check_ffmpeg()
+        if ok:
+            path = get_ffmpeg_path()
+            self._log_msg(f"⚡ FFmpeg đã sẵn sàng: {path}")
+        else:
+            self._open_ffmpeg_download()
+
+    def _open_ffmpeg_download(self):
+        def on_download_success():
+            self._check_prerequisites()
+            ok, _ = check_ffmpeg()
+            if ok and self.config.get("gemini_api_key"):
+                self.btn_start.configure(state="normal")
+            self._log_msg("✅ Đã cài đặt và kích hoạt FFmpeg thành công!")
+
+        FFmpegDownloadDialog(self, on_success=on_download_success)
 
     def _open_output_dir(self):
         out_dir = self.config.get("output_dir", str(Path.home() / "Desktop"))

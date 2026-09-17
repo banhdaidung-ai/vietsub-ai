@@ -27,9 +27,16 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Prepare FFmpeg for macOS
+        run: |
+          python -c "import static_ffmpeg.run; ffmpeg, ffprobe = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise(); import shutil, os; os.makedirs('bin', exist_ok=True); shutil.copy(ffmpeg, 'bin/ffmpeg'); shutil.copy(ffprobe, 'bin/ffprobe')"
+
       - name: Build macOS App & DMG
         run: |
           pyinstaller --noconfirm --clean VietsubAI.spec
+          # Nhúng trực tiếp vào trong macOS app bundle Resources / MacOS
+          cp bin/ffmpeg "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
+          cp bin/ffprobe "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
           mkdir -p dist/dmg_temp
           cp -R "dist/VietsubAI.app" "dist/dmg_temp/"
           ln -s /Applications "dist/dmg_temp/Applications"
@@ -60,9 +67,29 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Prepare FFmpeg for Windows
+        shell: pwsh
+        run: |
+          Write-Host "Đang chuẩn bị bộ giải mã FFmpeg cho Windows..."
+          New-Item -ItemType Directory -Force -Path "bin"
+          $zipPath = "$env:TEMP\ffmpeg_win32.zip"
+          Invoke-WebRequest -Uri "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/win32.zip" -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\ffmpeg_unzip" -Force
+          Copy-Item "$env:TEMP\ffmpeg_unzip\win32\ffmpeg.exe" -Destination "bin\" -Force
+          Copy-Item "$env:TEMP\ffmpeg_unzip\win32\ffprobe.exe" -Destination "bin\" -Force
+          Remove-Item -Recurse -Force "$env:TEMP\ffmpeg_unzip", $zipPath
+          Write-Host "Đã tải sẵn ffmpeg.exe và ffprobe.exe vào thư mục bin!"
+
       - name: Build Windows Executable
         run: |
           pyinstaller --noconfirm --clean VietsubAI.spec
+
+      - name: Ensure FFmpeg Bundled in Windows Dist
+        shell: pwsh
+        run: |
+          Copy-Item "bin\ffmpeg.exe" -Destination "dist\VietsubAI\" -Force
+          Copy-Item "bin\ffprobe.exe" -Destination "dist\VietsubAI\" -Force
+          Write-Host "Đã đảm bảo ffmpeg.exe và ffprobe.exe có mặt trong dist\VietsubAI!"
 
       - name: Zip Windows Build
         shell: pwsh

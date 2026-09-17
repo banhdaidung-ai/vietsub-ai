@@ -23,23 +23,38 @@ if not exist "venv" (
 call venv\Scripts\activate.bat
 
 :: 3. Cài đặt thư viện phụ thuộc
-echo [2/4] Đang cài đặt thư viện phụ thuộc...
+echo [2/5] Đang cài đặt thư viện phụ thuộc...
 pip install -r requirements.txt
 pip install pyinstaller
 
-:: 4. Dọn dẹp thư mục build cũ
-echo [3/4] Dọn dẹp build/dist cũ...
+:: 4. Chuẩn bị FFmpeg cho Windows
+echo [3/5] Đang chuẩn bị bộ giải mã FFmpeg...
+if not exist "bin" mkdir "bin"
+if not exist "bin\ffmpeg.exe" (
+    echo Đang tải FFmpeg tĩnh cho Windows từ máy chủ...
+    powershell -Command "$zip = '$env:TEMP\ffmpeg_win32.zip'; Invoke-WebRequest -Uri 'https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/win32.zip' -OutFile $zip; Expand-Archive -Path $zip -DestinationPath '$env:TEMP\ff_temp' -Force; Copy-Item '$env:TEMP\ff_temp\win32\*.exe' 'bin\' -Force; Remove-Item -Recurse -Force '$env:TEMP\ff_temp', $zip"
+)
+
+:: 5. Dọn dẹp thư mục build cũ
+echo [4/5] Dọn dẹp build/dist cũ...
 if exist "build" rd /s /q "build"
 if exist "dist" rd /s /q "dist"
 
-:: 5. Chạy đóng gói với PyInstaller
-echo [4/4] Đang đóng gói Vietsub AI bằng PyInstaller...
+:: 6. Chạy đóng gói với PyInstaller
+echo [5/5] Đang đóng gói Vietsub AI bằng PyInstaller...
 pyinstaller --noconfirm --clean VietsubAI.spec
 
 if not exist "dist\VietsubAI\VietsubAI.exe" (
     echo [LỖI] Đóng gói thất bại! Không tìm thấy dist\VietsubAI\VietsubAI.exe
     pause
     exit /b 1
+)
+
+:: Đảm bảo FFmpeg có mặt trong thư mục dist\VietsubAI
+if exist "bin\ffmpeg.exe" (
+    copy /y "bin\ffmpeg.exe" "dist\VietsubAI\" >nul
+    copy /y "bin\ffprobe.exe" "dist\VietsubAI\" >nul
+    echo [OK] Đã nhúng sẵn ffmpeg.exe và ffprobe.exe vào dist\VietsubAI!
 )
 
 echo.
