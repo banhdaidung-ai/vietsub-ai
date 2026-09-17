@@ -16,6 +16,7 @@ from core.downloader import VideoDownloader
 from core.ffmpeg_processor import FFmpegProcessor
 from core.gemini_processor import GeminiProcessor
 from core.tts_generator import TTSGenerator
+from utils.config import get_output_dir
 from utils.ffmpeg_check import get_video_duration
 from utils.srt_parser import normalize_srt_content, parse_srt, segments_to_srt
 
@@ -88,8 +89,7 @@ class Pipeline:
     def _run_impl(
         self, config: dict, input_source: str, is_url: bool, tmp_dir: str
     ):
-        output_dir = config.get("output_dir", str(Path.home() / "Desktop"))
-        os.makedirs(output_dir, exist_ok=True)
+        output_dir = get_output_dir(config)
         os.makedirs(tmp_dir, exist_ok=True)
 
         # ── Bước 1: Lấy file video ──────────────────────────────────────────
@@ -121,22 +121,35 @@ class Pipeline:
             return
 
         source_lang = config.get("source_language", "zh")
+        target_lang = config.get("target_language", "vi")
         enable_tts = config.get("enable_tts", True if source_lang != "vi" else False)
+        # Khi đầu ra không phải tiếng Việt thì bỏ qua TTS (chưa có giọng nước ngoài)
+        if target_lang != "vi":
+            enable_tts = False
 
-        # ── Bước 2: Gemini phiên âm / dịch → SRT ───────────────────────────
-        if source_lang == "vi":
+        # ── Bước 2: Gemini phiên âm / dịch → SRT ──────────────────────────────────────
+        src_name_map = {
+            "auto": "Tự Động", "zh": "Tiếng Trung", "en": "Tiếng Anh",
+            "vi": "Tiếng Việt", "ja": "Tiếng Nhật", "ko": "Tiếng Hàn",
+            "th": "Tiếng Thái", "fr": "Tiếng Pháp", "es": "Tiếng Tây Ban Nha", "de": "Tiếng Đức",
+        }
+        tgt_name_map = {"vi": "Tiếng Việt", "en": "Tiếng Anh"}
+        src_label = src_name_map.get(source_lang, source_lang.upper())
+        tgt_label = tgt_name_map.get(target_lang, target_lang.upper())
+
+        if source_lang == "auto":
+            self._log(f"🤖 Gemini sẽ tự nhận diện ngôn ngữ và tạo phụ đề {tgt_label}...")
+        elif source_lang == "vi" and target_lang == "vi":
             self._log("🤖 Đang gửi video lên Gemini AI để phiên âm tạo phụ đề Tiếng Việt...")
-        elif source_lang == "en":
-            self._log("🤖 Đang gửi video lên Gemini AI để phiên âm và dịch Tiếng Anh → Việt...")
         else:
-            self._log("🤖 Đang gửi video lên Gemini AI để phiên âm và dịch Tiếng Trung → Việt...")
+            self._log(f"🤖 Đang gửi video lên Gemini AI để phiên âm và dịch {src_label} → {tgt_label}...")
 
         gemini = GeminiProcessor(
             api_key=config["gemini_api_key"],
             preferred_model=config.get("gemini_model", "auto"),
             progress_callback=self._make_progress_cb(0.10, 0.50),
         )
-        raw_srt = gemini.process_video(video_path, source_lang=source_lang)
+        raw_srt = gemini.process_video(video_path, source_lang=source_lang, target_lang=target_lang)
         srt_content = normalize_srt_content(raw_srt)
 
         # Lưu SRT tạm
@@ -145,11 +158,11 @@ class Pipeline:
             f.write(srt_content)
 
         segments = parse_srt(srt_content)
-        if source_lang == "vi":
+        if source_lang == "vi" and target_lang == "vi":
             self._log(f"✅ Phiên âm xong: {len(segments)} đoạn phụ đề tiếng Việt")
             self._progress(0.50, "Phiên âm xong")
         else:
-            self._log(f"✅ Dịch xong: {len(segments)} đoạn phụ đề tiếng Việt")
+            self._log(f"✅ Dịch xong: {len(segments)} đoạn phụ đề {tgt_label}")
             self._progress(0.50, "Dịch xong")
 
         # ── Bước 2.5: Duyệt & Chỉnh sửa phụ đề (nếu người dùng bật) ────────
@@ -181,7 +194,13 @@ class Pipeline:
         # Tùy chọn lưu file rời ra output folder
         video_stem = Path(video_path).stem
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        suffix = "sub_vi" if source_lang == "vi" else "vietsub"
+        # Đặt suffix theo ngôn ngữ đầu ra
+        if target_lang == "en":
+            suffix = "sub_en"
+        elif source_lang == "vi":
+            suffix = "sub_vi"
+        else:
+            suffix = "vietsub"
 
         export_srt = config.get("export_srt", True)
         export_txt = config.get("export_txt", True)
@@ -220,11 +239,23 @@ class Pipeline:
                 # Fallback: dùng end_ms của segment cuối + 5s buffer
                 total_duration = (segments[-1].end_ms / 1000 + 5) if segments else 3600.0
 
-            self._log(f"🗣️ Đang tạo giọng đọc ({config.get('tts_voice', 'vi-VN-HoaiMyNeural')})...")
+            tts_tech = config.get("tts_technology", "edge")
+            if tts_tech == "gemini":
+                chosen_voice = config.get("tts_voice_gemini", "Aoede")
+                tech_display = f"Google Gemini AI ({chosen_voice})"
+            else:
+                chosen_voice = config.get("tts_voice", "vi-VN-HoaiMyNeural")
+                tech_display = f"Microsoft AI ({chosen_voice})"
+
+            self._log(f"🗣️ Đang tạo giọng đọc [{tech_display}]...")
             tts_audio = os.path.join(tmp_dir, "tts_track.mp3")
 
             tts = TTSGenerator(
-                voice=config.get("tts_voice", "vi-VN-HoaiMyNeural"),
+                voice=chosen_voice,
+                tts_technology=tts_tech,
+                speed=config.get("tts_speed", "+0%"),
+                pitch=config.get("tts_pitch", "+0Hz"),
+                api_key=config.get("gemini_api_key", ""),
                 progress_callback=self._make_progress_cb(0.50, 0.75),
                 is_cancelled=lambda: self._cancelled,
             )
@@ -264,6 +295,7 @@ class Pipeline:
             sub_only=not enable_tts,
             subtitle_font_size=int(config.get("subtitle_font_size", 10)),
             subtitle_margin_v=int(config.get("subtitle_margin_v", 8)),
+            subtitle_style_preset=config.get("subtitle_style_preset", "capcut_yellow"),
         )
 
         self._progress(1.0, "Hoàn tất!")

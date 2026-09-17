@@ -149,11 +149,18 @@ def test_7_gemini_api_connectivity():
         return
     
     client = genai.Client(api_key=api_key)
-    # Ping thử một prompt ngắn với model gemini-2.5-flash
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents="Say OK",
-    )
+    # Ping thử một prompt ngắn với các model khả dụng
+    response = None
+    for m in ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]:
+        try:
+            response = client.models.generate_content(
+                model=m,
+                contents="Say OK",
+            )
+            if response and response.text:
+                break
+        except Exception:
+            continue
     assert response and response.text, "Gemini API phản hồi rỗng"
     print(f"   ✅ Kết nối Gemini API thành công! Phản hồi từ Google: '{response.text.strip()}' [PASS]")
 

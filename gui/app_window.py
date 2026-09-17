@@ -15,12 +15,20 @@ from typing import Optional
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
+from core.audio_separator import check_demucs_installed, separate_audio_stems
 from core.pipeline import Pipeline
 from gui.ffmpeg_download_dialog import FFmpegDownloadDialog
 from gui.settings_dialog import SettingsDialog
+from gui.completion_dialog import CompletionDialog, _fmt_size
 from gui.subtitle_editor_dialog import SubtitleEditorDialog
-from utils.config import load_config, save_config
+from gui.audio_separator_dialog import AudioSeparatorDialog
+from utils.config import get_output_dir, load_config, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
+from utils.subtitle_styles import (
+    get_style_display_names,
+    get_preset_by_name,
+    get_preset_by_id,
+)
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -52,6 +60,10 @@ APPLE_RED = "#FF453A"          # Apple Crimson
 APPLE_RED_HOVER = "#D73327"
 APPLE_RED_BG = "#361413"       # Subtle red pill bg
 APPLE_RED_BORDER = "#692523"
+APPLE_PURPLE = "#AF52DE"       # Apple Purple
+APPLE_PURPLE_HOVER = "#9333EA"
+APPLE_PURPLE_BG = "#2B143E"    # Subtle purple pill bg
+APPLE_PURPLE_BORDER = "#581C87"
 APPLE_INDIGO = "#5E5CE6"       # Apple Indigo
 APPLE_CYAN = "#64D2FF"         # Apple Cyan
 
@@ -75,7 +87,9 @@ class AppWindow(ctk.CTk):
         self.pipeline: Optional[Pipeline] = None
         self._is_processing = False
         self._download_cancelled = False
+        self._audio_sep_cancel_event = threading.Event()
         self._current_step = 0
+        self._last_elapsed_str = "00:00"   # Lưu thời gian xử lý để dùng cho popup
 
         # Stopwatch / Timer đếm thời gian thực hiện
         self._timer_start_time = None
@@ -298,16 +312,32 @@ class AppWindow(ctk.CTk):
 
         ctk.CTkLabel(
             file_action_bar,
-            text="💡 Hỗ trợ: MP4, MKV, MOV, AVI, WEBM",
+            text="💡 Hỗ trợ: MP4, MKV, MOV, AVI, WEBM, MP3, WAV, M4A...",
             font=("Arial", 11),
             text_color=TEXT_SECONDARY,
         ).pack(side="left")
 
+        self.btn_separate_audio = ctk.CTkButton(
+            file_action_bar,
+            text="🎤 Tách Lời & Nhạc (AI)",
+            font=("Arial", 11, "bold"),
+            width=175,
+            height=28,
+            corner_radius=6,
+            fg_color=APPLE_PURPLE_BG,
+            hover_color=APPLE_PURPLE_HOVER,
+            text_color="#D8B4FE",
+            border_width=1,
+            border_color=APPLE_PURPLE_BORDER,
+            command=self._on_separate_audio_clicked,
+        )
+        self.btn_separate_audio.pack(side="right", padx=(6, 0))
+
         self.btn_extract_audio = ctk.CTkButton(
             file_action_bar,
-            text="🎵 Trích Xuất Audio (MP3 320k)",
+            text="🎵 Trích Audio (MP3 320k)",
             font=("Arial", 11, "bold"),
-            width=190,
+            width=175,
             height=28,
             corner_radius=6,
             fg_color=APPLE_ORANGE_BG,
@@ -377,8 +407,9 @@ class AppWindow(ctk.CTk):
 
         self.url_mode_display_map = {
             "download_only": "⬇️ Video Gốc",
-            "download_audio": "🎵 Chỉ Tải Nhạc / Audio",
-            "download_and_sub": "⚡ Tải & Vietsub Luôn",
+            "download_audio": "🎵 Chỉ Tải Nhạc",
+            "download_and_sub": "⚡ Tải & Vietsub",
+            "download_and_separate": "🎤 Tách Nhạc & Lời",
         }
         self.reverse_url_mode_map = {v: k for k, v in self.url_mode_display_map.items()}
 
@@ -390,11 +421,18 @@ class AppWindow(ctk.CTk):
             value=self.url_mode_display_map.get(current_url_mode, "⬇️ Video Gốc")
         )
 
-        init_color = APPLE_GREEN if current_url_mode == "download_only" else (APPLE_ORANGE if current_url_mode == "download_audio" else APPLE_BLUE)
+        if current_url_mode == "download_only":
+            init_color = APPLE_GREEN
+        elif current_url_mode == "download_audio":
+            init_color = APPLE_ORANGE
+        elif current_url_mode == "download_and_separate":
+            init_color = APPLE_PURPLE
+        else:
+            init_color = APPLE_BLUE
 
         self.seg_url_mode = ctk.CTkSegmentedButton(
             url_controls_bar,
-            values=["⬇️ Video Gốc", "🎵 Chỉ Tải Nhạc / Audio", "⚡ Tải & Vietsub Luôn"],
+            values=list(self.url_mode_display_map.values()),
             command=self._on_url_mode_changed,
             height=30,
             corner_radius=8,
@@ -503,29 +541,96 @@ class AppWindow(ctk.CTk):
             text_color=TEXT_PRIMARY,
         ).pack(side="left", padx=(0, 6))
 
-        self.lang_display_map = {
-            "zh": "🇨🇳 Tiếng Trung",
-            "en": "🇺🇸 Tiếng Anh",
-            "vi": "🇻🇳 Tiếng Việt",
+        # Maps: code → display label
+        self.source_lang_display_map = {
+            "auto": "🌍 Tự Động (AI nhận diện)",
+            "zh":   "🇨🇳 Tiếng Trung",
+            "en":   "🇺🇸 Tiếng Anh",
+            "vi":   "🇻🇳 Tiếng Việt",
+            "ja":   "🇯🇵 Tiếng Nhật",
+            "ko":   "🇰🇷 Tiếng Hàn",
+            "th":   "🇹🇭 Tiếng Thái",
+            "fr":   "🇫🇷 Tiếng Pháp",
+            "es":   "🇪🇸 Tiếng Tây Ban Nha",
+            "de":   "🇩🇪 Tiếng Đức",
         }
-        self.reverse_lang_map = {v: k for k, v in self.lang_display_map.items()}
+        self.source_lang_reverse_map = {v: k for k, v in self.source_lang_display_map.items()}
+
+        self.target_lang_display_map = {
+            "vi": "🇻🇳 Tiếng Việt",
+            "en": "🇺🇸 Tiếng Anh",
+        }
+        self.target_lang_reverse_map = {v: k for k, v in self.target_lang_display_map.items()}
 
         current_lang = self.config.get("source_language", "zh")
+        current_target = self.config.get("target_language", "vi")
         self.source_lang_var = ctk.StringVar(value=current_lang)
+        self.target_lang_var = ctk.StringVar(value=current_target)
 
-        self.seg_lang = ctk.CTkSegmentedButton(
+        # ─ Dropdown: Ngôn ngữ gốc ────────────────────────────────────────────
+        ctk.CTkLabel(
             lang_box,
-            values=["🇨🇳 Tiếng Trung", "🇺🇸 Tiếng Anh", "🇻🇳 Tiếng Việt"],
+            text="Gốc:",
+            font=("Arial", 11, "bold"),
+            text_color=TEXT_SECONDARY,
+        ).pack(side="left", padx=(0, 4))
+
+        self.menu_source_lang = ctk.CTkOptionMenu(
+            lang_box,
+            values=list(self.source_lang_display_map.values()),
             command=self._on_source_lang_change,
             height=30,
+            width=190,
             corner_radius=8,
-            selected_color=APPLE_BLUE,
-            selected_hover_color=APPLE_BLUE_HOVER,
-            unselected_color=BG_CARD,
-            unselected_hover_color=BG_PILL_HOVER,
+            fg_color=BG_CARD,
+            button_color=APPLE_BLUE,
+            button_hover_color=APPLE_BLUE_HOVER,
+            text_color=TEXT_PRIMARY,
+            dropdown_fg_color=BG_CARD,
+            dropdown_hover_color=BG_PILL_HOVER,
+            dropdown_text_color=TEXT_PRIMARY,
+            font=("Arial", 12),
         )
-        self.seg_lang.set(self.lang_display_map.get(current_lang, "🇨🇳 Tiếng Trung"))
-        self.seg_lang.pack(side="left")
+        self.menu_source_lang.set(
+            self.source_lang_display_map.get(current_lang, "🌍 Tự Động (AI nhận diện)")
+        )
+        self.menu_source_lang.pack(side="left", padx=(0, 8))
+
+        ctk.CTkLabel(
+            lang_box,
+            text="→",
+            font=("Arial", 14, "bold"),
+            text_color=APPLE_GREEN,
+        ).pack(side="left", padx=(0, 8))
+
+        # ─ Dropdown: Ngôn ngữ đầu ra ─────────────────────────────────────────
+        ctk.CTkLabel(
+            lang_box,
+            text="Sub:",
+            font=("Arial", 11, "bold"),
+            text_color=TEXT_SECONDARY,
+        ).pack(side="left", padx=(0, 4))
+
+        self.menu_target_lang = ctk.CTkOptionMenu(
+            lang_box,
+            values=list(self.target_lang_display_map.values()),
+            command=self._on_target_lang_change,
+            height=30,
+            width=148,
+            corner_radius=8,
+            fg_color=BG_CARD,
+            button_color=APPLE_GREEN,
+            button_hover_color=APPLE_GREEN_HOVER,
+            text_color=TEXT_PRIMARY,
+            dropdown_fg_color=BG_CARD,
+            dropdown_hover_color=BG_PILL_HOVER,
+            dropdown_text_color=TEXT_PRIMARY,
+            font=("Arial", 12),
+        )
+        self.menu_target_lang.set(
+            self.target_lang_display_map.get(current_target, "🇻🇳 Tiếng Việt")
+        )
+        self.menu_target_lang.pack(side="left")
 
         right_top_box = ctk.CTkFrame(opts_row1, fg_color="transparent")
         right_top_box.pack(side="right")
@@ -545,7 +650,10 @@ class AppWindow(ctk.CTk):
         )
         self.btn_editor.pack(side="left", padx=(0, 14))
 
-        current_enable_tts = self.config.get("enable_tts", True if current_lang != "vi" else False)
+        current_enable_tts = self.config.get("enable_tts", True if current_lang not in ("vi",) else False)
+        # Nếu target không phải Tiếng Việt, tắt TTS và lock lại
+        if current_target != "vi":
+            current_enable_tts = False
         self.enable_tts_var = ctk.BooleanVar(value=current_enable_tts)
 
         self.switch_tts = ctk.CTkSwitch(
@@ -558,6 +666,9 @@ class AppWindow(ctk.CTk):
             variable=self.enable_tts_var,
         )
         self.switch_tts.pack(side="left")
+        # Khoá TTS nếu target là tiếng Anh (chưa có giọng ngoại ngữ)
+        if current_target != "vi":
+            self.switch_tts.configure(state="disabled")
 
         # Dòng 2: Cỡ chữ sub (trái) & Tùy chọn Duyệt sub & Xuất kèm SRT / TXT (phải)
         opts_row2 = ctk.CTkFrame(options_bar, fg_color="transparent")
@@ -568,10 +679,10 @@ class AppWindow(ctk.CTk):
 
         ctk.CTkLabel(
             font_box,
-            text="📝 Cỡ chữ sub:",
-            font=("Arial", 12, "bold"),
+            text="📝 Cỡ chữ:",
+            font=("Arial", 11, "bold"),
             text_color=TEXT_PRIMARY,
-        ).pack(side="left", padx=(0, 6))
+        ).pack(side="left", padx=(0, 4))
 
         current_font_size = self.config.get("subtitle_font_size", 10)
         self.font_slider_main = ctk.CTkSlider(
@@ -579,22 +690,73 @@ class AppWindow(ctk.CTk):
             from_=8,
             to=24,
             number_of_steps=16,
-            width=110,
+            width=85,
             command=self._on_main_font_slide,
             progress_color=APPLE_BLUE,
             button_color="#99C7FF",
         )
         self.font_slider_main.set(current_font_size)
-        self.font_slider_main.pack(side="left", padx=(0, 6))
+        self.font_slider_main.pack(side="left", padx=(0, 4))
 
         self.lbl_font_main = ctk.CTkLabel(
             font_box,
             text=f"{int(current_font_size)} pt",
-            font=("Consolas", 12, "bold"),
+            font=("Consolas", 11, "bold"),
             text_color=APPLE_CYAN,
-            width=42,
+            width=36,
         )
-        self.lbl_font_main.pack(side="left")
+        self.lbl_font_main.pack(side="left", padx=(0, 10))
+
+        # ─ Dropdown: Mẫu Phụ Đề CapCut ───────────────────────
+        ctk.CTkLabel(
+            font_box,
+            text="🎨 Mẫu Sub:",
+            font=("Arial", 11, "bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left", padx=(0, 4))
+
+        current_preset_id = self.config.get("subtitle_style_preset", "capcut_yellow")
+        current_preset = get_preset_by_id(current_preset_id)
+
+        self.menu_subtitle_style = ctk.CTkOptionMenu(
+            font_box,
+            values=get_style_display_names(),
+            command=self._on_subtitle_style_change,
+            height=28,
+            width=180,
+            corner_radius=8,
+            fg_color=BG_CARD,
+            button_color=APPLE_BLUE,
+            button_hover_color=APPLE_BLUE_HOVER,
+            text_color=TEXT_PRIMARY,
+            dropdown_fg_color=BG_CARD,
+            dropdown_hover_color=BG_PILL_HOVER,
+            dropdown_text_color=TEXT_PRIMARY,
+            font=("Arial", 11),
+        )
+        self.menu_subtitle_style.set(current_preset["name"])
+        self.menu_subtitle_style.pack(side="left", padx=(0, 6))
+
+        # Huy hiệu xem trước mẫu (Live preview badge)
+        self.style_preview_pill = ctk.CTkFrame(
+            font_box,
+            fg_color=current_preset["ui_bg"],
+            border_width=1,
+            border_color=current_preset["ui_border"],
+            corner_radius=6,
+            height=26,
+            width=68,
+        )
+        self.style_preview_pill.pack(side="left")
+        self.style_preview_pill.pack_propagate(False)
+
+        self.lbl_style_preview_text = ctk.CTkLabel(
+            self.style_preview_pill,
+            text="Aa Sub",
+            font=("Arial", 11, "bold"),
+            text_color=current_preset["ui_fg"],
+        )
+        self.lbl_style_preview_text.place(relx=0.5, rely=0.5, anchor="center")
 
         export_box = ctk.CTkFrame(opts_row2, fg_color="transparent")
         export_box.pack(side="right")
@@ -602,7 +764,7 @@ class AppWindow(ctk.CTk):
         self.review_subtitles_var = ctk.BooleanVar(value=self.config.get("review_subtitles", False))
         self.chk_review_sub = ctk.CTkCheckBox(
             export_box,
-            text="✏️ Duyệt & sửa sub trước khi ghép",
+            text="✏️ Duyệt sub",
             variable=self.review_subtitles_var,
             command=self._on_review_sub_toggle,
             font=("Arial", 11, "bold"),
@@ -616,14 +778,14 @@ class AppWindow(ctk.CTk):
             checkbox_width=18,
             checkbox_height=18,
         )
-        self.chk_review_sub.pack(side="left", padx=(0, 14))
+        self.chk_review_sub.pack(side="left", padx=(0, 10))
 
         ctk.CTkLabel(
             export_box,
-            text="📤 Xuất kèm:",
-            font=("Arial", 12, "bold"),
+            text="📤 Xuất:",
+            font=("Arial", 11, "bold"),
             text_color=TEXT_PRIMARY,
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(0, 6))
 
         self.export_srt_var = ctk.BooleanVar(value=self.config.get("export_srt", True))
         self.chk_export_srt = ctk.CTkCheckBox(
@@ -987,6 +1149,18 @@ class AppWindow(ctk.CTk):
                     values=list(self.audio_format_display_map.values()),
                     variable=self.download_audio_format_var,
                 )
+        elif mode_key == "download_and_separate":
+            self.seg_url_mode.configure(
+                selected_color=APPLE_PURPLE,
+                selected_hover_color=APPLE_PURPLE_HOVER,
+            )
+            if hasattr(self, "lbl_format_or_quality"):
+                self.lbl_format_or_quality.configure(text="🎵 Định dạng:")
+            if hasattr(self, "quality_menu"):
+                self.quality_menu.configure(
+                    values=list(self.audio_format_display_map.values()),
+                    variable=self.download_audio_format_var,
+                )
         else:
             self.seg_url_mode.configure(
                 selected_color=APPLE_BLUE,
@@ -1004,7 +1178,7 @@ class AppWindow(ctk.CTk):
     def _on_format_or_quality_changed(self, selected_label: str):
         """Xử lý khi người dùng đổi chất lượng video hoặc định dạng audio."""
         mode = self.config.get("url_action_mode", "download_only")
-        if mode == "download_audio":
+        if mode in ("download_audio", "download_and_separate"):
             fmt_key = self.reverse_audio_format_map.get(selected_label, "mp3")
             self.config["audio_format"] = fmt_key
             save_config(self.config)
@@ -1049,6 +1223,18 @@ class AppWindow(ctk.CTk):
                         text="💡 Chỉ tải riêng bài nhạc/âm thanh chất lượng 320kbps (YouTube, TikTok, SoundCloud, Artlist...).",
                         text_color=APPLE_ORANGE,
                     )
+            elif mode == "download_and_separate":
+                audio_fmt = self.config.get("audio_format", "mp3").upper()
+                self.btn_start.configure(
+                    text=f"🎤 TẢI & TÁCH NHẠC / LỜI ({audio_fmt})",
+                    fg_color=APPLE_PURPLE,
+                    hover_color=APPLE_PURPLE_HOVER,
+                )
+                if hasattr(self, "lbl_url_hint"):
+                    self.lbl_url_hint.configure(
+                        text="💡 Tải bài nhạc/video về máy và tự động dùng Demucs AI bóc tách giọng hát & beat karaoke riêng biệt.",
+                        text_color="#D8B4FE",
+                    )
             else:
                 self.btn_start.configure(
                     text="⚡ TẢI & VIETSUB NGAY",
@@ -1062,11 +1248,14 @@ class AppWindow(ctk.CTk):
                     )
         else:
             source_lang = getattr(self, "source_lang_var", None) and self.source_lang_var.get() or "zh"
+            target_lang = getattr(self, "target_lang_var", None) and self.target_lang_var.get() or "vi"
             enable_tts = getattr(self, "enable_tts_var", None) and self.enable_tts_var.get()
             if enable_tts is None:
                 enable_tts = True
 
-            if source_lang == "vi":
+            if target_lang == "en":
+                btn_text = "🚀 TẠO SUB TIẾNG ANH"
+            elif source_lang == "vi":
                 btn_text = "🚀 TẠO PHỤ ĐỀ VIỆT" if not enable_tts else "🚀 TẠO SUB & LỒNG TIẾNG"
             else:
                 btn_text = "🚀 DỊCH & GHÉP SUB" if not enable_tts else "🚀 BẮT ĐẦU DỊCH"
@@ -1086,6 +1275,8 @@ class AppWindow(ctk.CTk):
                 self._start_download_only()
             elif mode == "download_audio":
                 self._start_audio_download()
+            elif mode == "download_and_separate":
+                self._start_url_download_and_separate()
             else:
                 self._start()
         else:
@@ -1107,15 +1298,35 @@ class AppWindow(ctk.CTk):
         self._update_action_button()
 
     def _on_source_lang_change(self, display_val: str):
-        val = self.reverse_lang_map.get(display_val, "zh")
+        """Khi thả dropdown Ngôn ngữ gốc."""
+        val = self.source_lang_reverse_map.get(display_val, "auto")
         self.source_lang_var.set(val)
-        # Nếu chuyển sang Tiếng Việt -> mặc định tắt TTS để giữ nguyên giọng nói gốc của video
-        if val == "vi":
+        target_lang = self.target_lang_var.get()
+        # Việt gốc + Việt đích → tắt TTS mặc định; ngược lại bật
+        if val == "vi" and target_lang == "vi":
             self.enable_tts_var.set(False)
             self.switch_tts.deselect()
-        else:
+        elif target_lang == "vi":
             self.enable_tts_var.set(True)
             self.switch_tts.select()
+        self._update_step_labels()
+
+    def _on_target_lang_change(self, display_val: str):
+        """Khi thả dropdown Ngôn ngữ đích (Sub đầu ra)."""
+        val = self.target_lang_reverse_map.get(display_val, "vi")
+        self.target_lang_var.set(val)
+        if val == "vi":
+            # Mở khoá TTS, khôi phục theo source lang
+            self.switch_tts.configure(state="normal")
+            source = self.source_lang_var.get()
+            if source != "vi":
+                self.enable_tts_var.set(True)
+                self.switch_tts.select()
+        else:
+            # Khoá TTS vì chưa hỗ trợ giọng nước ngoài
+            self.enable_tts_var.set(False)
+            self.switch_tts.deselect()
+            self.switch_tts.configure(state="disabled")
         self._update_step_labels()
 
     def _on_tts_toggle(self):
@@ -1164,6 +1375,24 @@ class AppWindow(ctk.CTk):
         self.lbl_font_main.configure(text=f"{int_val} pt")
         self.config["subtitle_font_size"] = int_val
         save_config(self.config)
+
+    def _update_style_preview(self, preset: dict):
+        """Cập nhật huy hiệu xem trước kiểu phụ đề."""
+        if hasattr(self, "style_preview_pill") and hasattr(self, "lbl_style_preview_text"):
+            self.style_preview_pill.configure(
+                fg_color=preset.get("ui_bg", "#1E2028"),
+                border_color=preset.get("ui_border", "#FFE600"),
+            )
+            self.lbl_style_preview_text.configure(
+                text_color=preset.get("ui_fg", "#FFE600")
+            )
+
+    def _on_subtitle_style_change(self, display_name: str):
+        preset = get_preset_by_name(display_name)
+        self.config["subtitle_style_preset"] = preset["id"]
+        save_config(self.config)
+        self._update_style_preview(preset)
+        self._log_msg(f"🎨 Đã chọn mẫu phụ đề: {preset['name']}")
 
     def _check_prerequisites(self):
         """Kiểm tra FFmpeg và API Key khi khởi động và cập nhật Badges."""
@@ -1220,8 +1449,7 @@ class AppWindow(ctk.CTk):
         FFmpegDownloadDialog(self, on_success=on_download_success)
 
     def _open_output_dir(self):
-        out_dir = self.config.get("output_dir", str(Path.home() / "Desktop"))
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = get_output_dir(self.config)
         try:
             if sys.platform == "darwin":
                 subprocess.Popen(["open", out_dir])
@@ -1247,6 +1475,12 @@ class AppWindow(ctk.CTk):
             new_fs = new_config.get("subtitle_font_size", 10)
             self.font_slider_main.set(new_fs)
             self.lbl_font_main.configure(text=f"{int(new_fs)} pt")
+            # Đồng bộ mẫu phụ đề CapCut
+            new_preset_id = new_config.get("subtitle_style_preset", "capcut_yellow")
+            if hasattr(self, "menu_subtitle_style"):
+                preset_obj = get_preset_by_id(new_preset_id)
+                self.menu_subtitle_style.set(preset_obj["name"])
+                self._update_style_preview(preset_obj)
             if hasattr(self, "export_srt_var"):
                 self.export_srt_var.set(new_config.get("export_srt", True))
             if hasattr(self, "export_txt_var"):
@@ -1258,7 +1492,12 @@ class AppWindow(ctk.CTk):
 
     def _browse_file(self):
         filepath = ctk.filedialog.askopenfilename(
-            filetypes=[("Video files", "*.mp4 *.mkv *.mov *.avi *.webm")]
+            filetypes=[
+                ("Tệp video & âm thanh", "*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.m4a *.flac *.aac"),
+                ("Video files", "*.mp4 *.mkv *.mov *.avi *.webm"),
+                ("Audio files", "*.mp3 *.wav *.m4a *.flac *.aac"),
+                ("Tất cả tệp", "*.*"),
+            ]
         )
         if filepath:
             self.file_path_var.set(filepath)
@@ -1281,6 +1520,10 @@ class AppWindow(ctk.CTk):
             self._log_msg("❌ Lỗi: Vui lòng chọn file video hoặc dán link online.")
             return
 
+        if not is_url and not os.path.exists(source):
+            self._log_msg(f"❌ Lỗi: Không tìm thấy file nguồn hoặc đường dẫn không hợp lệ:\n   {source}")
+            return
+
         # Khóa UI
         self._is_processing = True
         self.btn_start.configure(state="disabled")
@@ -1289,7 +1532,8 @@ class AppWindow(ctk.CTk):
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
             self.quality_menu.configure(state="disabled")
-            self.seg_lang.configure(state="disabled")
+            self.menu_source_lang.configure(state="disabled")
+            self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
             if hasattr(self, "chk_review_sub"):
@@ -1300,6 +1544,10 @@ class AppWindow(ctk.CTk):
                 self.chk_export_txt.configure(state="disabled")
             if hasattr(self, "btn_editor"):
                 self.btn_editor.configure(state="disabled")
+            if hasattr(self, "btn_extract_audio"):
+                self.btn_extract_audio.configure(state="disabled")
+            if hasattr(self, "btn_separate_audio"):
+                self.btn_separate_audio.configure(state="disabled")
         except Exception:
             pass
 
@@ -1313,6 +1561,7 @@ class AppWindow(ctk.CTk):
 
             # Cập nhật cấu hình hiện tại và lưu lại
             self.config["source_language"] = self.source_lang_var.get()
+            self.config["target_language"] = self.target_lang_var.get()
             self.config["enable_tts"] = self.enable_tts_var.get()
             self.config["download_quality"] = self.reverse_quality_map.get(self.download_quality_var.get(), "best")
             self.config["export_srt"] = self.export_srt_var.get()
@@ -1355,13 +1604,18 @@ class AppWindow(ctk.CTk):
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
             self.quality_menu.configure(state="disabled")
-            self.seg_lang.configure(state="disabled")
+            self.menu_source_lang.configure(state="disabled")
+            self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
             if hasattr(self, "chk_export_srt"):
                 self.chk_export_srt.configure(state="disabled")
             if hasattr(self, "chk_export_txt"):
                 self.chk_export_txt.configure(state="disabled")
+            if hasattr(self, "btn_extract_audio"):
+                self.btn_extract_audio.configure(state="disabled")
+            if hasattr(self, "btn_separate_audio"):
+                self.btn_separate_audio.configure(state="disabled")
         except Exception:
             pass
 
@@ -1372,7 +1626,7 @@ class AppWindow(ctk.CTk):
         self.status_label.configure(text="⏳ Đang kết nối tới máy chủ video...")
         self._set_active_step(1)
 
-        out_dir = self.config.get("output_dir", str(Path.home() / "Desktop"))
+        out_dir = get_output_dir(self.config)
         quality = self.config.get("download_quality", "best")
         quality_label = self.quality_display_map.get(quality, quality.upper())
         self._log_msg(f"📥 Bắt đầu tải video gốc ({quality_label}) từ:\n   {url}")
@@ -1421,7 +1675,8 @@ class AppWindow(ctk.CTk):
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
             self.quality_menu.configure(state="disabled")
-            self.seg_lang.configure(state="disabled")
+            self.menu_source_lang.configure(state="disabled")
+            self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
             if hasattr(self, "chk_export_srt"):
@@ -1430,6 +1685,8 @@ class AppWindow(ctk.CTk):
                 self.chk_export_txt.configure(state="disabled")
             if hasattr(self, "btn_extract_audio"):
                 self.btn_extract_audio.configure(state="disabled")
+            if hasattr(self, "btn_separate_audio"):
+                self.btn_separate_audio.configure(state="disabled")
         except Exception:
             pass
 
@@ -1440,7 +1697,7 @@ class AppWindow(ctk.CTk):
         self.status_label.configure(text="⏳ Đang kết nối tải bài nhạc...")
         self._set_active_step(1)
 
-        out_dir = self.config.get("output_dir", str(Path.home() / "Desktop"))
+        out_dir = get_output_dir(self.config)
         audio_fmt = self.config.get("audio_format", "mp3")
         bitrate = self.config.get("audio_bitrate", "320k")
         fmt_label = self.audio_format_display_map.get(audio_fmt, audio_fmt.upper())
@@ -1470,6 +1727,196 @@ class AppWindow(ctk.CTk):
 
         threading.Thread(target=run_audio_dl, daemon=True).start()
 
+    def _on_separate_audio_clicked(self):
+        """Mở hộp thoại tùy chọn tách giọng hát (Vocal) và nhạc nền (Beat Karaoke)."""
+        video_path = self.file_path_var.get().strip()
+        if not video_path or not os.path.exists(video_path):
+            self._log_msg("❌ Lỗi: Vui lòng chọn một file video hoặc bài nhạc ở Tab 1 trước khi bấm tách.")
+            return
+
+        ok, msg = check_demucs_installed()
+        if not ok:
+            self._log_msg(f"❌ {msg}")
+            return
+
+        AudioSeparatorDialog(
+            self,
+            input_file=video_path,
+            on_start=self._start_audio_separation,
+        )
+
+    def _start_audio_separation(self, mode: str, audio_format: str, bitrate: str):
+        """Bắt đầu tiến trình tách giọng hát và nhạc beat bằng Demucs AI."""
+        video_path = self.file_path_var.get().strip()
+        if not video_path or not os.path.exists(video_path):
+            self._log_msg("❌ Lỗi: Không tìm thấy file nguồn.")
+            return
+
+        self._is_processing = True
+        self._audio_sep_cancel_event.clear()
+        self.btn_start.configure(state="disabled")
+        self.btn_cancel.configure(state="normal")
+        if hasattr(self, "btn_extract_audio"):
+            self.btn_extract_audio.configure(state="disabled")
+        if hasattr(self, "btn_separate_audio"):
+            self.btn_separate_audio.configure(state="disabled")
+        try:
+            self.tabview.configure(state="disabled")
+            self.seg_url_mode.configure(state="disabled")
+            self.quality_menu.configure(state="disabled")
+            self.menu_source_lang.configure(state="disabled")
+            self.menu_target_lang.configure(state="disabled")
+            self.switch_tts.configure(state="disabled")
+            self.font_slider_main.configure(state="disabled")
+        except Exception:
+            pass
+
+        self.log_box.delete("1.0", "end")
+        self.progress_bar.set(0.05)
+        self.pct_badge.configure(text="5%")
+        self._start_timer()
+        self.status_label.configure(text="⏳ Đang khởi tạo mô hình AI tách âm thanh...")
+        self._set_active_step(1)
+
+        out_dir = get_output_dir(self.config)
+        mode_label = "Lời riêng & Nhạc Beat riêng" if mode == "both" else ("Chỉ lấy Nhạc Beat (Karaoke)" if mode == "instrumental" else "Chỉ lấy Giọng hát (Acapella)")
+        self._log_msg(f"🎤 Bắt đầu tách âm thanh bằng AI Demucs v4:")
+        self._log_msg(f"   📁 Tệp nguồn: {video_path}")
+        self._log_msg(f"   🎯 Chế độ: {mode_label}")
+        self._log_msg(f"   🎵 Định dạng: {audio_format.upper()} ({bitrate})")
+        self._log_msg(f"   📂 Thư mục lưu: {out_dir}")
+
+        def run_separate():
+            try:
+                def on_prog(pct, label):
+                    self.task_queue.put({"type": "progress", "value": pct, "label": label})
+
+                results = separate_audio_stems(
+                    input_path=video_path,
+                    output_dir=out_dir,
+                    mode=mode,
+                    audio_format=audio_format,
+                    bitrate=bitrate,
+                    progress_callback=on_prog,
+                    cancel_event=self._audio_sep_cancel_event,
+                )
+                self.task_queue.put({
+                    "type": "audio_separate_success",
+                    "results": results,
+                    "mode": mode,
+                    "out_dir": out_dir,
+                })
+            except Exception as e:
+                self.task_queue.put({"type": "log", "message": f"❌ Lỗi khi tách âm thanh: {e}"})
+                self.task_queue.put({"type": "progress", "value": 0.0, "label": "Thất bại"})
+            finally:
+                self.task_queue.put({"type": "download_done"})
+
+        threading.Thread(target=run_separate, daemon=True).start()
+
+    def _start_url_download_and_separate(self):
+        """Tải bài nhạc/video từ link online rồi tự động chạy Demucs AI để tách lời và beat."""
+        url = self.url_var.get().strip()
+        if not url:
+            self._log_msg("❌ Lỗi: Vui lòng dán link video hoặc bài nhạc vào ô nhập.")
+            return
+
+        ok, msg = check_ffmpeg()
+        if not ok:
+            self._log_msg(f"❌ {msg}")
+            return
+
+        ok_demucs, msg_demucs = check_demucs_installed()
+        if not ok_demucs:
+            self._log_msg(f"❌ {msg_demucs}")
+            return
+
+        self._is_processing = True
+        self._download_cancelled = False
+        self._audio_sep_cancel_event.clear()
+        self.btn_start.configure(state="disabled")
+        self.btn_cancel.configure(state="normal")
+        if hasattr(self, "btn_extract_audio"):
+            self.btn_extract_audio.configure(state="disabled")
+        if hasattr(self, "btn_separate_audio"):
+            self.btn_separate_audio.configure(state="disabled")
+        try:
+            self.tabview.configure(state="disabled")
+            self.seg_url_mode.configure(state="disabled")
+            self.quality_menu.configure(state="disabled")
+            self.menu_source_lang.configure(state="disabled")
+            self.menu_target_lang.configure(state="disabled")
+            self.switch_tts.configure(state="disabled")
+            self.font_slider_main.configure(state="disabled")
+        except Exception:
+            pass
+
+        self.log_box.delete("1.0", "end")
+        self.progress_bar.set(0.0)
+        self.pct_badge.configure(text="0%")
+        self._start_timer()
+        self.status_label.configure(text="⏳ Đang kết nối tải bài nhạc...")
+        self._set_active_step(1)
+
+        out_dir = get_output_dir(self.config)
+        audio_fmt = self.config.get("audio_format", "mp3")
+        bitrate = self.config.get("audio_bitrate", "320k")
+        self._log_msg(f"🎤 Bắt đầu quy trình Tải & Tách Nhạc/Lời từ:\n   {url}")
+        self._log_msg(f"📁 Thư mục lưu: {out_dir}")
+
+        def run_url_dl_and_separate():
+            from core.downloader import VideoDownloader
+            try:
+                def on_dl_prog(pct, label):
+                    mapped = pct * 0.30
+                    self.task_queue.put({"type": "progress", "value": mapped, "label": f"[1/2] {label}"})
+
+                dl = VideoDownloader(
+                    progress_callback=on_dl_prog,
+                    is_cancelled=lambda: self._download_cancelled,
+                )
+                dl_file = dl.download_audio(url, out_dir, audio_format="wav")
+
+                if self._download_cancelled or self._audio_sep_cancel_event.is_set():
+                    raise InterruptedError("Người dùng đã hủy tác vụ.")
+
+                def on_sep_prog(pct, label):
+                    mapped = 0.30 + pct * 0.70
+                    self.task_queue.put({"type": "progress", "value": mapped, "label": f"[2/2] {label}"})
+
+                results = separate_audio_stems(
+                    input_path=dl_file,
+                    output_dir=out_dir,
+                    mode="both",
+                    audio_format=audio_fmt,
+                    bitrate=bitrate,
+                    progress_callback=on_sep_prog,
+                    cancel_event=self._audio_sep_cancel_event,
+                )
+
+                if audio_fmt != "wav" and os.path.exists(dl_file):
+                    try:
+                        os.remove(dl_file)
+                    except Exception:
+                        pass
+
+                self.task_queue.put({
+                    "type": "audio_separate_success",
+                    "results": results,
+                    "mode": "both",
+                    "out_dir": out_dir,
+                })
+            except (InterruptedError, KeyboardInterrupt):
+                self.task_queue.put({"type": "log", "message": "⚠️ Tiến trình tải và tách nhạc đã bị hủy."})
+                self.task_queue.put({"type": "progress", "value": 0.0, "label": "Đã hủy"})
+            except Exception as e:
+                self.task_queue.put({"type": "log", "message": f"❌ Lỗi trong quá trình xử lý: {e}"})
+                self.task_queue.put({"type": "progress", "value": 0.0, "label": "Thất bại"})
+            finally:
+                self.task_queue.put({"type": "download_done"})
+
+        threading.Thread(target=run_url_dl_and_separate, daemon=True).start()
+
     def _on_extract_audio_from_file_clicked(self):
         """Trích xuất ngay lập tức âm thanh từ file video đã chọn ở Tab 1 sang MP3 320kbps."""
         video_path = self.file_path_var.get().strip()
@@ -1487,6 +1934,8 @@ class AppWindow(ctk.CTk):
         self.btn_cancel.configure(state="disabled")
         if hasattr(self, "btn_extract_audio"):
             self.btn_extract_audio.configure(state="disabled")
+        if hasattr(self, "btn_separate_audio"):
+            self.btn_separate_audio.configure(state="disabled")
         try:
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
@@ -1501,7 +1950,7 @@ class AppWindow(ctk.CTk):
         self.status_label.configure(text="⏳ Đang bóc tách âm thanh sang MP3 320kbps...")
         self._set_active_step(1)
 
-        out_dir = self.config.get("output_dir", str(Path.home() / "Desktop"))
+        out_dir = get_output_dir(self.config)
         self._log_msg(f"🎵 Bắt đầu trích xuất âm thanh sang MP3 (320kbps) từ file:\n   {video_path}")
         self._log_msg(f"📁 Thư mục lưu: {out_dir}")
 
@@ -1532,6 +1981,8 @@ class AppWindow(ctk.CTk):
             self.status_label.configure(text="⚠️ Đang gửi yêu cầu hủy...")
             self.btn_cancel.configure(state="disabled")
             self._download_cancelled = True
+            if hasattr(self, "_audio_sep_cancel_event"):
+                self._audio_sep_cancel_event.set()
             self._stop_timer(success=False)
             if self.pipeline:
                 self.pipeline.cancel()
@@ -1593,6 +2044,21 @@ class AppWindow(ctk.CTk):
                 elif msg_type == "success":
                     self._set_active_step(5)  # All done
                     self._log_msg("\n✨ Xử lý thành công xuất sắc! Nhấn '📁 Mở Thư Mục Xuất' để xem video.")
+                    # Hiện popup hoàn tất
+                    video_path = msg.get("video_path", "")
+                    srt_path   = msg.get("srt_path", None)
+                    txt_path   = msg.get("txt_path", None)
+                    self.after(
+                        300,
+                        lambda vp=video_path, sp=srt_path, tp=txt_path: CompletionDialog(
+                            self,
+                            video_path=vp,
+                            srt_path=sp,
+                            txt_path=tp,
+                            elapsed_str=self._last_elapsed_str,
+                            on_new_video=self._reset_for_new_video,
+                        ),
+                    )
 
                 elif msg_type == "download_success":
                     fp = msg["file_path"]
@@ -1623,9 +2089,59 @@ class AppWindow(ctk.CTk):
                     self.pct_badge.configure(text="100%")
                     self.status_label.configure(text=f"✨ Đã hoàn thành {title.lower()}.")
 
+                elif msg_type == "audio_separate_success":
+                    results = msg.get("results", {})
+                    out_dir = msg.get("out_dir", "")
+                    mode = msg.get("mode", "both")
+                    self._log_msg("\n" + "─" * 48)
+                    self._log_msg("🎉 TÁCH LỜI VÀ NHẠC BEAT THÀNH CÔNG!")
+                    custom_rows = []
+                    primary_file = ""
+
+                    if "vocals" in results and os.path.exists(results["vocals"]):
+                        v_path = results["vocals"]
+                        fn = Path(v_path).name
+                        sz = _fmt_size(v_path)
+                        self._log_msg(f"   🎤 Lời ca sĩ (Vocal): {fn} ({sz})")
+                        custom_rows.append(("🎤", "Lời ca sĩ:", f"{fn}  ({sz})", APPLE_PURPLE))
+                        primary_file = v_path
+
+                    if "instrumental" in results and os.path.exists(results["instrumental"]):
+                        i_path = results["instrumental"]
+                        fn = Path(i_path).name
+                        sz = _fmt_size(i_path)
+                        self._log_msg(f"   🎸 Nhạc beat (Karaoke): {fn} ({sz})")
+                        custom_rows.append(("🎸", "Nhạc Beat:", f"{fn}  ({sz})", APPLE_GREEN))
+                        if not primary_file:
+                            primary_file = i_path
+
+                    self._log_msg(f"   📁 Lưu tại: {out_dir}")
+                    custom_rows.append(("📁", "Lưu tại:", out_dir, TEXT_SECONDARY))
+                    custom_rows.append(("⏱️", "Thời gian:", self._last_elapsed_str or "Hoàn tất", APPLE_GREEN))
+
+                    self._log_msg("✨ File âm thanh chất lượng cao đã sẵn sàng để sử dụng!")
+                    self.progress_bar.set(1.0)
+                    self.pct_badge.configure(text="100%")
+                    self.status_label.configure(text="✨ Tách lời và nhạc hoàn tất xuất sắc!")
+
+                    # Hiển thị CompletionDialog
+                    self.after(
+                        300,
+                        lambda pf=primary_file, cr=custom_rows: CompletionDialog(
+                            self,
+                            video_path=pf,
+                            title_text="TÁCH LỜI & NHẠC THÀNH CÔNG!",
+                            subtitle_text="Đã bóc tách giọng ca sĩ và nhạc beat karaoke an toàn.",
+                            custom_rows=cr,
+                            elapsed_str=self._last_elapsed_str,
+                            on_new_video=self._reset_for_new_video,
+                        ),
+                    )
+
                 elif msg_type == "download_done" or msg_type == "done":
                     self._is_processing = False
                     elapsed_str = self._stop_timer(success=True)
+                    self._last_elapsed_str = elapsed_str  # Lưu lại để popup hoàn tất dùng
                     self._log_msg(f"⏱️ Tổng thời gian thực hiện: {elapsed_str}")
                     self.btn_start.configure(state="normal")
                     self.btn_cancel.configure(state="disabled")
@@ -1633,8 +2149,13 @@ class AppWindow(ctk.CTk):
                         self.tabview.configure(state="normal")
                         self.seg_url_mode.configure(state="normal")
                         self.quality_menu.configure(state="normal")
-                        self.seg_lang.configure(state="normal")
-                        self.switch_tts.configure(state="normal")
+                        self.menu_source_lang.configure(state="normal")
+                        self.menu_target_lang.configure(state="normal")
+                        # Giữ TTS disabled nếu target vẫn là ngôn ngữ không phải Tiếng Việt
+                        if getattr(self, "target_lang_var", None) and self.target_lang_var.get() != "vi":
+                            self.switch_tts.configure(state="disabled")
+                        else:
+                            self.switch_tts.configure(state="normal")
                         self.font_slider_main.configure(state="normal")
                         if hasattr(self, "chk_review_sub"):
                             self.chk_review_sub.configure(state="normal")
@@ -1646,6 +2167,8 @@ class AppWindow(ctk.CTk):
                             self.btn_editor.configure(state="normal")
                         if hasattr(self, "btn_extract_audio"):
                             self.btn_extract_audio.configure(state="normal")
+                        if hasattr(self, "btn_separate_audio"):
+                            self.btn_separate_audio.configure(state="normal")
                     except Exception:
                         pass
                     self.pipeline = None
@@ -1656,3 +2179,38 @@ class AppWindow(ctk.CTk):
             print(f"Error in _process_queue: {e}")
         finally:
             self.after(100, self._process_queue)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # RESET UI CHO VIDEO MỚI
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _reset_for_new_video(self):
+        """Đặt lại giao diện để người dùng sẵn sàng xử lý video tiếp theo.
+        Được gọi từ nút '✨ Làm Video Tiếp Theo' trong CompletionDialog.
+        """
+        try:
+            # Xoá ô nhập URL / link
+            if hasattr(self, "url_entry"):
+                self.url_entry.delete(0, "end")
+            # Xoá ô nhập file path
+            if hasattr(self, "file_path_var"):
+                self.file_path_var.set("")
+            # Xoá log
+            self.log_box.delete("1.0", "end")
+            # Reset thanh tiến trình
+            self.progress_bar.set(0.0)
+            self.pct_badge.configure(text="0%")
+            self.status_label.configure(text="Sẵn sàng xử lý video mới...")
+            # Reset pipeline step tracker
+            self._reset_steps()
+            # Reset timer badge
+            if hasattr(self, "timer_badge"):
+                self.timer_badge.configure(text="⏱️ 00:00", text_color="#98989F")
+            self._last_elapsed_str = "00:00"
+            # Chuyển về Tab đầu tiên (Chọn File) nếu đang ở tab khác
+            try:
+                self.tabview.set("📂 Chọn File Video Trên Máy")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[_reset_for_new_video] {e}")

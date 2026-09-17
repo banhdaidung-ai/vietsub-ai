@@ -10,6 +10,7 @@ import time
 from typing import Callable, Optional
 
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
+from utils.subtitle_styles import build_ffmpeg_subtitle_style
 
 
 def check_has_audio(video_path: str) -> bool:
@@ -88,6 +89,7 @@ class FFmpegProcessor:
         subtitle_font_size: int = 10,
         subtitle_margin_v: int = 8,
         subtitles_path: str = "",
+        subtitle_style_preset: str = "capcut_yellow",
     ):
         srt_path = srt_path or subtitles_path
         """
@@ -124,17 +126,11 @@ class FFmpegProcessor:
             shutil.copy2(srt_path, temp_srt_path)
             has_subtitles = True
 
-        subtitle_style = (
-            "Fontname=Arial,"
-            f"FontSize={subtitle_font_size},"
-            "Bold=1,"
-            "PrimaryColour=&H00FFFFFF,"   # Text trắng sáng rõ nét
-            "OutlineColour=&H00000000,"   # Viền đen sắc nét
-            "BackColour=&H00000000,"      # Trong suốt không bị hộp đen thô
-            "Outline=0.8,"                # Viền mảnh sắc nét cho chữ nhỏ
-            "Shadow=0.4,"                 # Đổ bóng nhẹ
-            f"MarginV={subtitle_margin_v},"  # Cách mép đáy
-            "Alignment=2"                  # Căn giữa dưới
+        subtitle_style = build_ffmpeg_subtitle_style(
+            preset_id=subtitle_style_preset,
+            font_size=subtitle_font_size,
+            margin_v=subtitle_margin_v,
+            alignment=2,
         )
 
         # Chạy với cwd=temp_dir để filename là tên file ngắn gọn,

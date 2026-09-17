@@ -23,6 +23,7 @@ from utils.srt_parser import (
     segments_to_srt,
     time_to_ms,
 )
+from utils.config import get_output_dir
 
 
 class SubtitleEditorDialog(ctk.CTkToplevel):
@@ -619,8 +620,7 @@ class SubtitleEditorDialog(ctk.CTkToplevel):
             with open(srt_tmp, "w", encoding="utf-8") as f:
                 f.write(srt_str)
 
-            out_dir = cfg.get("output_dir", str(Path.home() / "Desktop"))
-            os.makedirs(out_dir, exist_ok=True)
+            out_dir = get_output_dir(cfg)
             stem = Path(self.video_path).stem
             clean_stem = re.sub(r"_(sub_vi|vietsub|reburn)_\d{8}_\d{4,6}$", "", stem).strip()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -644,6 +644,7 @@ class SubtitleEditorDialog(ctk.CTkToplevel):
                     sub_only=True,
                     subtitle_font_size=int(cfg.get("subtitle_font_size", 10)),
                     subtitle_margin_v=int(cfg.get("subtitle_margin_v", 8)),
+                    subtitle_style_preset=cfg.get("subtitle_style_preset", "capcut_yellow"),
                 )
                 self.after(0, lambda p=out_video: self._on_reburn_success(p))
             except Exception as e:

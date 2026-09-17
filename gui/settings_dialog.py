@@ -4,13 +4,20 @@ gui/settings_dialog.py — Hộp thoại Cài đặt nâng cao, hiện đại ch
 
 import os
 import webbrowser
+from pathlib import Path
 from typing import Callable
 
 import customtkinter as ctk
 
 from gui.ffmpeg_download_dialog import FFmpegDownloadDialog
-from utils.config import save_config
+from utils.config import get_output_dir, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
+from utils.subtitle_styles import (
+    DEFAULT_PRESET_ID,
+    get_style_display_names,
+    get_preset_by_name,
+    get_preset_by_id,
+)
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -151,38 +158,163 @@ class SettingsDialog(ctk.CTkToplevel):
             font=("Arial", 14, "bold"),
         ).pack(anchor="w", padx=16, pady=(14, 10))
 
-        # Voice Selector
-        voice_frame = ctk.CTkFrame(card_audio, fg_color="transparent")
-        voice_frame.pack(fill="x", padx=16, pady=(0, 10))
+        # Công nghệ lồng tiếng
+        tech_frame = ctk.CTkFrame(card_audio, fg_color="transparent")
+        tech_frame.pack(fill="x", padx=16, pady=(0, 8))
 
         ctk.CTkLabel(
-            voice_frame,
-            text="Giọng đọc tiếng Việt (Microsoft Edge Neural):",
+            tech_frame,
+            text="Công nghệ lồng tiếng:",
             font=("Arial", 12),
             text_color="#94A3B8",
         ).pack(anchor="w", pady=(0, 4))
 
-        self.voice_map = {
+        self.tts_tech_var = ctk.StringVar(value=self.config.get("tts_technology", "edge"))
+        self.seg_tts_tech = ctk.CTkSegmentedButton(
+            tech_frame,
+            values=["🎙️ Microsoft AI (Chuẩn Việt)", "🎭 Google Gemini AI (Biểu Cảm)"],
+            command=self._on_tts_tech_change,
+            height=34,
+            corner_radius=8,
+            selected_color="#4F46E5",
+            selected_hover_color="#4338CA",
+        )
+        if self.tts_tech_var.get() == "gemini":
+            self.seg_tts_tech.set("🎭 Google Gemini AI (Biểu Cảm)")
+        else:
+            self.seg_tts_tech.set("🎙️ Microsoft AI (Chuẩn Việt)")
+        self.seg_tts_tech.pack(fill="x")
+
+        self.lbl_tech_desc = ctk.CTkLabel(
+            tech_frame,
+            text="",
+            font=("Arial", 11),
+            text_color="#94A3B8",
+            wraplength=480,
+            justify="left",
+        )
+        self.lbl_tech_desc.pack(anchor="w", pady=(4, 0))
+
+        # Voice Selector
+        voice_frame = ctk.CTkFrame(card_audio, fg_color="transparent")
+        voice_frame.pack(fill="x", padx=16, pady=(0, 8))
+
+        self.lbl_voice_title = ctk.CTkLabel(
+            voice_frame,
+            text="Chọn giọng đọc:",
+            font=("Arial", 12),
+            text_color="#94A3B8",
+        )
+        self.lbl_voice_title.pack(anchor="w", pady=(0, 4))
+
+        self.edge_voice_map = {
             "vi-VN-HoaiMyNeural (Nữ - Tự nhiên, truyền cảm)": "vi-VN-HoaiMyNeural",
             "vi-VN-NamMinhNeural (Nam - Trầm ấm, dõng dạc)": "vi-VN-NamMinhNeural",
         }
-        self.reverse_voice_map = {v: k for k, v in self.voice_map.items()}
+        self.reverse_edge_voice_map = {v: k for k, v in self.edge_voice_map.items()}
 
-        current_voice = self.config.get("tts_voice", "vi-VN-HoaiMyNeural")
-        current_display = self.reverse_voice_map.get(
-            current_voice, "vi-VN-HoaiMyNeural (Nữ - Tự nhiên, truyền cảm)"
-        )
+        self.gemini_voice_map = {
+            "Aoede (Nữ - Truyền cảm, ấm áp)": "Aoede",
+            "Kore (Nữ - Trong trẻo, tự nhiên)": "Kore",
+            "Charon (Nam - Trầm sâu, điện ảnh)": "Charon",
+            "Fenrir (Nam - Mạnh mẽ, dứt khoát)": "Fenrir",
+            "Puck (Nam - Trẻ trung, linh hoạt)": "Puck",
+        }
+        self.reverse_gemini_voice_map = {v: k for k, v in self.gemini_voice_map.items()}
+        self.voice_map = self.edge_voice_map
 
-        self.voice_display_var = ctk.StringVar(value=current_display)
+        self.voice_display_var = ctk.StringVar()
         self.voice_combo = ctk.CTkComboBox(
             voice_frame,
-            values=list(self.voice_map.keys()),
+            values=[],
             variable=self.voice_display_var,
             state="readonly",
             height=36,
             corner_radius=8,
         )
         self.voice_combo.pack(fill="x")
+
+        # Customization container (Speed/Pitch sliders for Edge or Note for Gemini)
+        self.voice_custom_box = ctk.CTkFrame(card_audio, fg_color="transparent")
+        self.voice_custom_box.pack(fill="x", padx=16, pady=(0, 8))
+
+        # Speed & Pitch Frame for Microsoft AI
+        self.tuning_frame = ctk.CTkFrame(self.voice_custom_box, fg_color="#1E293B", corner_radius=8)
+        self.tuning_frame.grid_columnconfigure(1, weight=1)
+
+        # Speed slider (-20% to +30%)
+        ctk.CTkLabel(
+            self.tuning_frame, text="Tốc độ đọc:", font=("Arial", 12), text_color="#CBD5E1"
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=6)
+
+        current_speed_str = self.config.get("tts_speed", "+0%")
+        try:
+            current_speed_val = int(current_speed_str.replace("%", ""))
+        except Exception:
+            current_speed_val = 0
+
+        self.speed_slider = ctk.CTkSlider(
+            self.tuning_frame,
+            from_=-20,
+            to=30,
+            number_of_steps=50,
+            command=self._on_speed_slide,
+            progress_color="#6366F1",
+            button_color="#818CF8",
+        )
+        self.speed_slider.set(current_speed_val)
+        self.speed_slider.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
+
+        self.lbl_speed_val = ctk.CTkLabel(
+            self.tuning_frame,
+            text=f"{current_speed_val:+d}%",
+            font=("Consolas", 12, "bold"),
+            width=50,
+        )
+        self.lbl_speed_val.grid(row=0, column=2, sticky="e", padx=12, pady=6)
+
+        # Pitch slider (-10Hz to +10Hz)
+        ctk.CTkLabel(
+            self.tuning_frame, text="Cao độ giọng:", font=("Arial", 12), text_color="#CBD5E1"
+        ).grid(row=1, column=0, sticky="w", padx=12, pady=6)
+
+        current_pitch_str = self.config.get("tts_pitch", "+0Hz")
+        try:
+            current_pitch_val = int(current_pitch_str.replace("Hz", ""))
+        except Exception:
+            current_pitch_val = 0
+
+        self.pitch_slider = ctk.CTkSlider(
+            self.tuning_frame,
+            from_=-10,
+            to=10,
+            number_of_steps=20,
+            command=self._on_pitch_slide,
+            progress_color="#6366F1",
+            button_color="#818CF8",
+        )
+        self.pitch_slider.set(current_pitch_val)
+        self.pitch_slider.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+
+        self.lbl_pitch_val = ctk.CTkLabel(
+            self.tuning_frame,
+            text=f"{current_pitch_val:+d}Hz",
+            font=("Consolas", 12, "bold"),
+            width=50,
+        )
+        self.lbl_pitch_val.grid(row=1, column=2, sticky="e", padx=12, pady=6)
+
+        # Note for Gemini AI
+        self.lbl_gemini_note = ctk.CTkLabel(
+            self.voice_custom_box,
+            text="✨ Google Gemini AI tự động biểu cảm ngữ điệu (vui buồn, kịch tính, thì thầm...) theo kịch bản vietsub.",
+            font=("Arial", 11, "italic"),
+            text_color="#818CF8",
+            wraplength=480,
+            justify="left",
+        )
+
+        self._refresh_tts_ui()
 
         # Audio Mixing Mode
         mode_frame = ctk.CTkFrame(card_audio, fg_color="transparent")
@@ -276,6 +408,64 @@ class SettingsDialog(ctk.CTkToplevel):
             text="📝 Kiểu Chữ Phụ Đề (Vietsub Style)",
             font=("Arial", 14, "bold"),
         ).pack(anchor="w", padx=16, pady=(14, 10))
+
+        # 0. Mẫu phụ đề CapCut / TikTok
+        preset_frame = ctk.CTkFrame(card_sub, fg_color="transparent")
+        preset_frame.pack(fill="x", padx=16, pady=(0, 10))
+
+        ctk.CTkLabel(
+            preset_frame,
+            text="Mẫu phụ đề (CapCut / TikTok):",
+            font=("Arial", 12, "bold"),
+            text_color="#F8FAFC",
+        ).pack(anchor="w", pady=(0, 4))
+
+        current_preset_id = self.config.get("subtitle_style_preset", DEFAULT_PRESET_ID)
+        current_preset = get_preset_by_id(current_preset_id)
+
+        self.preset_combo = ctk.CTkOptionMenu(
+            preset_frame,
+            values=get_style_display_names(),
+            command=self._on_preset_change,
+            height=34,
+            corner_radius=8,
+            fg_color="#1E293B",
+            button_color="#6366F1",
+            button_hover_color="#4F46E5",
+        )
+        self.preset_combo.set(current_preset["name"])
+        self.preset_combo.pack(fill="x", pady=(0, 6))
+
+        # Mô tả ngắn preset
+        self.lbl_preset_desc = ctk.CTkLabel(
+            preset_frame,
+            text=f"ℹ️ {current_preset['desc']}",
+            font=("Arial", 11),
+            text_color="#94A3B8",
+            wraplength=480,
+            justify="left",
+        )
+        self.lbl_preset_desc.pack(anchor="w", pady=(0, 8))
+
+        # Khung xem trước trực tiếp (Live Preview Card)
+        self.preview_card = ctk.CTkFrame(
+            preset_frame,
+            fg_color=current_preset["ui_bg"],
+            corner_radius=8,
+            border_width=1,
+            border_color=current_preset["ui_border"],
+            height=46,
+        )
+        self.preview_card.pack(fill="x", pady=(0, 4))
+        self.preview_card.pack_propagate(False)
+
+        self.lbl_preview_text = ctk.CTkLabel(
+            self.preview_card,
+            text="✨ Đây là phụ đề mẫu chuẩn phong cách CapCut",
+            font=("Arial", 13, "bold"),
+            text_color=current_preset["ui_fg"],
+        )
+        self.lbl_preview_text.place(relx=0.5, rely=0.5, anchor="center")
 
         sub_controls = ctk.CTkFrame(card_sub, fg_color="transparent")
         sub_controls.pack(fill="x", padx=16, pady=(0, 10))
@@ -371,7 +561,8 @@ class SettingsDialog(ctk.CTkToplevel):
         out_box = ctk.CTkFrame(card_out, fg_color="transparent")
         out_box.pack(fill="x", padx=16, pady=(0, 10))
 
-        self.out_dir_var = ctk.StringVar(value=self.config.get("output_dir", ""))
+        current_out = get_output_dir(self.config)
+        self.out_dir_var = ctk.StringVar(value=current_out)
         self.out_entry = ctk.CTkEntry(
             out_box,
             textvariable=self.out_dir_var,
@@ -564,22 +755,91 @@ class SettingsDialog(ctk.CTkToplevel):
         if dir_path:
             self.out_dir_var.set(dir_path)
 
+    def _on_tts_tech_change(self, value: str):
+        if "Gemini" in value:
+            self.tts_tech_var.set("gemini")
+        else:
+            self.tts_tech_var.set("edge")
+        self._refresh_tts_ui()
+
+    def _refresh_tts_ui(self):
+        tech = self.tts_tech_var.get()
+        if tech == "gemini":
+            self.lbl_tech_desc.configure(
+                text="🌟 Lồng tiếng điện ảnh đa cảm xúc chân thực theo ngữ cảnh vietsub (Gemini Flash Audio)."
+            )
+            self.lbl_voice_title.configure(text="Giọng đọc điện ảnh (Google Gemini Audio):")
+            self.voice_combo.configure(values=list(self.gemini_voice_map.keys()))
+            cur_voice = self.config.get("tts_voice_gemini", "Aoede")
+            cur_display = self.reverse_gemini_voice_map.get(
+                cur_voice, "Aoede (Nữ - Truyền cảm, ấm áp)"
+            )
+            self.voice_display_var.set(cur_display)
+            self.tuning_frame.pack_forget()
+            self.lbl_gemini_note.pack(fill="x", pady=(4, 2))
+        else:
+            self.lbl_tech_desc.configure(
+                text="⚡ Giọng đọc nhanh, chuẩn âm điệu tiếng Việt, hỗ trợ tùy chỉnh tốc độ & cao độ."
+            )
+            self.lbl_voice_title.configure(text="Giọng đọc tiếng Việt (Microsoft Edge Neural):")
+            self.voice_combo.configure(values=list(self.edge_voice_map.keys()))
+            cur_voice = self.config.get("tts_voice", "vi-VN-HoaiMyNeural")
+            cur_display = self.reverse_edge_voice_map.get(
+                cur_voice, "vi-VN-HoaiMyNeural (Nữ - Tự nhiên, truyền cảm)"
+            )
+            self.voice_display_var.set(cur_display)
+            self.lbl_gemini_note.pack_forget()
+            self.tuning_frame.pack(fill="x")
+
+    def _on_speed_slide(self, val: float):
+        int_val = int(round(val))
+        self.lbl_speed_val.configure(text=f"{int_val:+d}%")
+
+    def _on_pitch_slide(self, val: float):
+        int_val = int(round(val))
+        self.lbl_pitch_val.configure(text=f"{int_val:+d}Hz")
+
+    def _on_preset_change(self, display_name: str):
+        preset = get_preset_by_name(display_name)
+        self.lbl_preset_desc.configure(text=f"ℹ️ {preset['desc']}")
+        self.preview_card.configure(
+            fg_color=preset["ui_bg"],
+            border_color=preset["ui_border"],
+        )
+        self.lbl_preview_text.configure(text_color=preset["ui_fg"])
+
     def _save(self):
+        tts_tech = self.tts_tech_var.get()
+        self.config["tts_technology"] = tts_tech
         selected_display = self.voice_display_var.get()
-        real_voice = self.voice_map.get(selected_display, "vi-VN-HoaiMyNeural")
+
+        if tts_tech == "gemini":
+            real_voice = self.gemini_voice_map.get(selected_display, "Aoede")
+            self.config["tts_voice_gemini"] = real_voice
+        else:
+            real_voice = self.edge_voice_map.get(selected_display, "vi-VN-HoaiMyNeural")
+            self.config["tts_voice"] = real_voice
+
+        speed_val = int(round(self.speed_slider.get()))
+        pitch_val = int(round(self.pitch_slider.get()))
+        self.config["tts_speed"] = f"{speed_val:+d}%"
+        self.config["tts_pitch"] = f"{pitch_val:+d}Hz"
 
         selected_model_display = self.model_display_var.get()
         real_model = self.model_map.get(selected_model_display, "gemini-3.8-flash")
 
+        selected_preset_display = self.preset_combo.get()
+        real_preset = get_preset_by_name(selected_preset_display)
+
         self.config["gemini_api_key"] = self.api_entry.get().strip()
         self.config["gemini_model"] = real_model
-        self.config["tts_voice"] = real_voice
         self.config["audio_mode"] = self.audio_mode_var.get()
         self.config["original_volume"] = round(float(self.org_vol_slider.get()), 2)
         self.config["tts_volume"] = round(float(self.tts_vol_slider.get()), 2)
+        self.config["subtitle_style_preset"] = real_preset["id"]
         self.config["subtitle_font_size"] = int(self.font_size_slider.get())
         self.config["subtitle_margin_v"] = int(self.margin_v_slider.get())
-        self.config["output_dir"] = self.out_dir_var.get()
+        self.config["output_dir"] = self.out_dir_var.get().strip() or get_output_dir(self.config)
         self.config["export_srt"] = self.export_srt_var.get()
         self.config["export_txt"] = self.export_txt_var.get()
         self.config["review_subtitles"] = self.review_sub_var.get()

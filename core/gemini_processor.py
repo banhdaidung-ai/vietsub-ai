@@ -18,12 +18,17 @@ PROMPT_TRANSLATE_ZH_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề 
 
 NHIỆM VỤ: Nghe tất cả lời thoại tiếng Trung trong video này và dịch sang phụ đề tiếng Việt chính xác, tự nhiên 100% theo định dạng SRT.
 
-YÊU CẦU DỊCH THUẬT:
+YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM:
 - Dịch sang tiếng Việt tự nhiên, linh hoạt, chuẩn văn phong đời sống hoặc bối cảnh phim ảnh — tuyệt đối không dịch máy tính word-by-word khô cứng.
+- KHẨU NGỮ LỒNG TIẾNG CÓ HỒN: Bản dịch phải mang tính khẩu ngữ sinh động của người Việt, dùng từ ngữ khí tự nhiên theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả...).
+- NGỮ ĐIỆU & DẤU CÂU BIỂU CẢM (QUAN TRỌNG ĐỂ AI ĐỌC TRUYỀN CẢM):
+  * Dùng dấu chấm lửng "..." khi nhân vật ngập ngừng, xúc động hoặc ngắt nghỉ giữa chừng.
+  * Dùng dấu chấm than "!" cho câu hào hứng, giận dữ, dồn dập, cảm thán.
+  * Dùng dấu chấm hỏi "?" để giọng đọc tự động lên giọng ở cuối câu.
 - Nếu là bài hát / ca từ tiếng Trung: Dịch mượt mà, bay bổng đúng ý nghĩa ca từ và giai điệu.
 - Tách bạch giọng nói khỏi tiếng nhạc nền (BGM) và hiệu ứng âm thanh (SFX) để bắt trọn từng câu thoại.
 - Giữ nguyên tên người, địa danh (dùng phiên âm Hán Việt hoặc tên thông dụng quen thuộc).
-- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, tương đương độ dài và nhịp điệu của câu nói gốc trong video để khi đọc bằng giọng nói (TTS) không bị quá nhanh hay dồn chữ.
+- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, tương đương độ dài và nhịp điệu của câu nói gốc trong video để khi lồng tiếng không bị quá nhanh hay dồn chữ.
 - Bao gồm TẤT CẢ lời thoại, không bỏ sót câu nào.
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng.
 - Timestamp phải khớp chính xác với thời điểm nói trong video.
@@ -48,12 +53,17 @@ PROMPT_TRANSLATE_EN_TO_VI = """Bạn là chuyên gia dịch phụ đề chuyên 
 
 NHIỆM VỤ: Nghe tất cả lời thoại tiếng Anh trong video này và tạo phụ đề tiếng Việt chuẩn xác theo định dạng SRT.
 
-YÊU CẦU DỊCH THUẬT:
+YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM:
 - Dịch sang tiếng Việt tự nhiên, gãy gọn, chuẩn văn phong đời sống hoặc chuyên ngành — không dịch word-by-word máy móc.
+- KHẨU NGỮ LỒNG TIẾNG CÓ HỒN: Dịch theo khẩu ngữ giao tiếp tự nhiên của người Việt, dùng từ ngữ khí sinh động theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả...).
+- NGỮ ĐIỆU & DẤU CÂU BIỂU CẢM:
+  * Dùng dấu chấm lửng "..." khi nhân vật ngập ngừng, xúc động hoặc câu bị ngắt quãng.
+  * Dùng dấu chấm than "!" cho câu hào hứng, giận dữ, cảm thán, dồn dập.
+  * Dùng dấu chấm hỏi "?" để giọng đọc tự động lên giọng ở cuối câu.
 - Dịch chuẩn các thành ngữ (idioms), tiếng lóng (slang), khẩu ngữ giao tiếp theo cách diễn đạt tự nhiên của người Việt.
 - Tách bạch giọng nói khỏi nhạc nền (BGM) và beat nhạc.
 - Giữ nguyên tên riêng, địa danh quốc tế, thương hiệu hoặc thuật ngữ chuyên ngành phổ biến khi cần thiết.
-- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, cô đọng, độ dài tương xứng với thời lượng nói của câu gốc trong video để khi tạo giọng đọc (TTS) không bị quá nhanh hoặc dồn dập chữ.
+- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, cô đọng, độ dài tương xứng với thời lượng nói của câu gốc trong video để khi lồng tiếng không bị quá nhanh hoặc dồn dập chữ.
 - Bao gồm TẤT CẢ lời thoại, không bỏ sót bất kỳ câu nào.
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng để người xem kịp đọc và vừa vặn khung hình.
 - Timestamp phải khớp chính xác từng mili-giây với thời điểm người nói phát âm trong video.
@@ -106,10 +116,132 @@ Ngày hôm nay mình sẽ chia sẻ với các bạn một mẹo cực hay...
 BẮT ĐẦU XUẤT SRT NGAY:"""
 
 PROMPTS = {
-    "zh": PROMPT_TRANSLATE_ZH_TO_VI,
-    "en": PROMPT_TRANSLATE_EN_TO_VI,
-    "vi": PROMPT_TRANSCRIBE_VI,
+    ("zh", "vi"): PROMPT_TRANSLATE_ZH_TO_VI,
+    ("en", "vi"): PROMPT_TRANSLATE_EN_TO_VI,
+    ("vi", "vi"): PROMPT_TRANSCRIBE_VI,
 }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prompt: Tự động nhận diện ngôn ngữ → Tiếng Việt
+# ──────────────────────────────────────────────────────────────────────────────
+PROMPT_AUTO_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề phim và video đa ngôn ngữ hàng đầu.
+
+NHIỆM VỤ: Lắng nghe toàn bộ lời thoại trong video, TỰ ĐỘNG NHẬN DIỆN ngôn ngữ gốc, rồi dịch sang phụ đề Tiếng Việt chuẩn xác theo định dạng SRT.
+
+QUY TRÌNH:
+1. Xác định ngôn ngữ đang được nói trong video (Trung, Anh, Nhật, Hàn, Thái, Pháp, Tây Ban Nha, Đức, ...)
+2. Dịch sang Tiếng Việt tự nhiên, linh hoạt, chuẩn văn phong — tuyệt đối không dịch word-by-word máy móc.
+3. Nếu video có nhiều ngôn ngữ, dịch tất cả sang Tiếng Việt.
+
+YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM:
+- Dịch sang tiếng Việt tự nhiên, chuẩn văn phong đời sống hoặc bối cảnh phim ảnh — mang tính khẩu ngữ sinh động.
+- Sử dụng dấu câu biểu cảm thông minh: "..." khi ngập ngừng, "!" khi cảm thán/cao trào, "?" để lên giọng hỏi.
+- Giữ nguyên tên người, địa danh, thương hiệu quen thuộc.
+- TỐC ĐỘ & ĐỘ DÀI: Câu dịch súc tích, tương đương độ dài câu gốc để lồng tiếng khớp nhịp.
+- Bao gồm TẤT CẢ lời thoại, không bỏ sót câu nào.
+- Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng.
+- Timestamp phải khớp chính xác với thời điểm nói trong video.
+- BẮT BUỘC định dạng thời gian 3 phần: HH:MM:SS,mmm. VÍ DỤ: 00:00:01,000 --> 00:00:04,500. TUYỆT ĐỐI KHÔNG bỏ phần giờ 00:.
+
+ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
+Chỉ xuất nội dung SRT thuần túy, không có markdown, không có giải thích, không có text ngoài SRT.
+
+BẮT ĐẦU XUẤT SRT NGAY:"""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prompt: Tự động nhận diện ngôn ngữ → Tiếng Anh
+# ──────────────────────────────────────────────────────────────────────────────
+PROMPT_AUTO_TO_EN = """You are a professional multilingual subtitle translator.
+
+TASK: Listen to all speech in this video, AUTO-DETECT the source language, then translate to accurate English subtitles in SRT format.
+
+PROCESS:
+1. Identify the spoken language(s) in the video (Vietnamese, Chinese, Japanese, Korean, Thai, French, Spanish, German, etc.)
+2. Translate to natural, fluent English — never word-by-word machine translation.
+3. If the video contains multiple languages, translate all to English.
+
+TRANSLATION REQUIREMENTS:
+- Natural, idiomatic English that reads well as subtitles.
+- Preserve proper names, place names, brand names.
+- TIMING & LENGTH: Keep subtitles concise, matching the pacing of the original speech.
+- Include ALL spoken lines — do not skip any.
+- Maximum 2 lines per subtitle, maximum 42 characters per line.
+- Timestamps must precisely match the moment of speech in the video.
+- REQUIRED time format: HH:MM:SS,mmm (e.g. 00:00:01,000 --> 00:00:04,500). NEVER omit the 00: hour part.
+
+OUTPUT FORMAT (STRICT):
+Output only pure SRT content — no markdown, no explanations, no text outside SRT.
+
+BEGIN SRT OUTPUT NOW:"""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prompt: Tiếng Việt → Tiếng Anh (phiên âm + dịch)
+# ──────────────────────────────────────────────────────────────────────────────
+PROMPT_VI_TO_EN = """You are a professional Vietnamese-to-English subtitle translator.
+
+TASK: Listen to all Vietnamese speech in this video and create accurate English subtitles in SRT format.
+
+TRANSLATION REQUIREMENTS:
+- Translate to natural, fluent, idiomatic English — never literal word-by-word translation.
+- Capture Vietnamese idioms, slang, and colloquial expressions in their natural English equivalents.
+- Preserve proper names, place names, Vietnamese brand names as appropriate.
+- TIMING & LENGTH: Keep subtitles concise, matching the original speech pacing so they are comfortable to read.
+- Include ALL spoken lines — do not omit anything.
+- Maximum 2 lines per subtitle, maximum 42 characters per line.
+- Timestamps must precisely match the moment of speech in the video.
+- REQUIRED time format: HH:MM:SS,mmm (e.g. 00:00:01,000 --> 00:00:04,500). NEVER omit the 00: hour part.
+
+OUTPUT FORMAT (STRICT):
+Output only pure SRT content — no markdown, no explanations, no text outside SRT.
+
+BEGIN SRT OUTPUT NOW:"""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prompt: Tiếng Trung → Tiếng Anh
+# ──────────────────────────────────────────────────────────────────────────────
+PROMPT_ZH_TO_EN = """You are a professional Chinese-to-English subtitle translator.
+
+TASK: Listen to all Chinese (Mandarin/Cantonese) speech in this video and create accurate English subtitles in SRT format.
+
+TRANSLATION REQUIREMENTS:
+- Translate to natural, fluent English — never word-by-word translation.
+- Preserve Chinese names using their common English/Pinyin equivalents as appropriate.
+- TIMING & LENGTH: Subtitles should be concise and match the original speech pacing.
+- Include ALL spoken lines — do not skip any.
+- Maximum 2 lines per subtitle, maximum 42 characters per line.
+- Timestamps must precisely match the moment of speech.
+- REQUIRED time format: HH:MM:SS,mmm (e.g. 00:00:01,000 --> 00:00:04,500). NEVER omit the 00: hour part.
+
+OUTPUT FORMAT (STRICT):
+Output only pure SRT content — no markdown, no explanations, no text outside SRT.
+
+BEGIN SRT OUTPUT NOW:"""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prompt lookup: (source_lang, target_lang) → prompt
+# source "auto" = AI tự nhận diện; source cụ thể = ngôn ngữ gốc được chỉ định
+# ──────────────────────────────────────────────────────────────────────────────
+PROMPTS.update({
+    # → Tiếng Việt
+    ("auto", "vi"): PROMPT_AUTO_TO_VI,
+    ("ja",   "vi"): PROMPT_AUTO_TO_VI,   # các ngôn ngữ chưa có prompt riêng → dùng auto
+    ("ko",   "vi"): PROMPT_AUTO_TO_VI,
+    ("th",   "vi"): PROMPT_AUTO_TO_VI,
+    ("fr",   "vi"): PROMPT_AUTO_TO_VI,
+    ("es",   "vi"): PROMPT_AUTO_TO_VI,
+    ("de",   "vi"): PROMPT_AUTO_TO_VI,
+    # → Tiếng Anh
+    ("auto", "en"): PROMPT_AUTO_TO_EN,
+    ("vi",   "en"): PROMPT_VI_TO_EN,
+    ("zh",   "en"): PROMPT_ZH_TO_EN,
+    ("en",   "en"): PROMPT_AUTO_TO_EN,   # Anh→Anh (phiên âm thuần)
+    ("ja",   "en"): PROMPT_AUTO_TO_EN,
+    ("ko",   "en"): PROMPT_AUTO_TO_EN,
+    ("th",   "en"): PROMPT_AUTO_TO_EN,
+    ("fr",   "en"): PROMPT_AUTO_TO_EN,
+    ("es",   "en"): PROMPT_AUTO_TO_EN,
+    ("de",   "en"): PROMPT_AUTO_TO_EN,
+})
 
 
 # MIME types được Gemini File API hỗ trợ
@@ -149,15 +281,23 @@ class GeminiProcessor:
         if self.progress_callback:
             self.progress_callback(pct, message)
 
-    def process_video(self, video_path: str, source_lang: str = "zh") -> str:
+    def process_video(
+        self,
+        video_path: str,
+        source_lang: str = "zh",
+        target_lang: str = "vi",
+    ) -> str:
         """
-        Upload video lên Gemini, phiên âm/dịch theo source_lang:
-          - "zh": Dịch tiếng Trung sang tiếng Việt
-          - "en": Dịch tiếng Anh sang tiếng Việt
-          - "vi": Phiên âm tiếng Việt tạo phụ đề
-        Trả về nội dung SRT tiếng Việt.
+        Upload video lên Gemini, phiên âm/dịch theo source_lang → target_lang.
+          source_lang: "auto"|"zh"|"en"|"vi"|"ja"|"ko"|"th"|"fr"|"es"|"de"
+          target_lang:  "vi" (Tiếng Việt) | "en" (Tiếng Anh)
+        Trả về nội dung SRT theo target_lang.
         """
-        prompt = PROMPTS.get(source_lang, PROMPT_TRANSLATE_ZH_TO_VI)
+        # Tra cứu prompt theo (source, target); fallback về auto → vi
+        prompt = PROMPTS.get(
+            (source_lang, target_lang),
+            PROMPTS.get(("auto", target_lang), PROMPT_AUTO_TO_VI),
+        )
 
         # Kiểm tra kích thước file
         file_size_gb = os.path.getsize(video_path) / (1024**3)
@@ -241,12 +381,19 @@ class GeminiProcessor:
                 )
 
             # Bước 3: Gọi Gemini để phiên âm / dịch
-            if source_lang == "vi":
+            target_label = "Tiếng Anh" if target_lang == "en" else "Tiếng Việt"
+            if source_lang == "auto":
+                status_msg = f"Gemini đang tự nhận diện ngôn ngữ và tạo phụ đề {target_label}..."
+            elif source_lang == "vi" and target_lang == "en":
+                status_msg = "Gemini đang phiên âm và dịch Tiếng Việt → Tiếng Anh..."
+            elif source_lang == "vi":
                 status_msg = "Gemini đang lắng nghe và phiên âm phụ đề Tiếng Việt..."
-            elif source_lang == "en":
+            elif source_lang == "en" and target_lang == "vi":
                 status_msg = "Gemini đang phiên âm và dịch Tiếng Anh → Tiếng Việt..."
+            elif source_lang == "zh" and target_lang == "en":
+                status_msg = "Gemini đang phiên âm và dịch Tiếng Trung → Tiếng Anh..."
             else:
-                status_msg = "Gemini đang phiên âm và dịch Tiếng Trung → Tiếng Việt..."
+                status_msg = f"Gemini đang phiên âm và dịch sang {target_label}..."
             self._report(0.5, status_msg)
 
             # Danh sách model theo thứ tự ưu tiên: Ưu tiên Gemini 3.8 Flash mới nhất, thông minh nhất
@@ -334,13 +481,19 @@ class GeminiProcessor:
             # Làm sạch và validate SRT
             srt_content = clean_srt_response(response.text)
             if not srt_content or len(srt_content.strip()) < 20:
-                lang_note = {
-                    "zh": "Video không có tiếng Trung",
-                    "en": "Video không có tiếng Anh",
-                    "vi": "Video không có lời thoại tiếng Việt",
-                }.get(source_lang, "Video không có lời thoại")
+                target_label = "Tiếng Anh" if target_lang == "en" else "Tiếng Việt"
+                if source_lang == "auto":
+                    lang_note = "Video không có lời thoại rõ ràng"
+                elif source_lang == "vi" and target_lang == "vi":
+                    lang_note = "Video không có lời thoại tiếng Việt"
+                elif source_lang == "en":
+                    lang_note = "Video không có tiếng Anh"
+                elif source_lang == "zh":
+                    lang_note = "Video không có tiếng Trung"
+                else:
+                    lang_note = f"Video không có lời thoại ngôn ngữ đã chọn"
                 raise ValueError(
-                    "Gemini không tạo được phụ đề.\n"
+                    f"Gemini không tạo được phụ đề {target_label}.\n"
                     "Có thể do:\n"
                     f"  • {lang_note}\n"
                     "  • Chất lượng âm thanh quá thấp hoặc bị lẫn tạp âm\n"
