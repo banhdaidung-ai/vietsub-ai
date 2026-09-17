@@ -132,24 +132,24 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.4' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.4 — Tối Ưu Dung Lượng Siêu Nhẹ (Giảm 75%)' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.5' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.5 — Giao Diện Apple macOS, Subtitle Studio & Live Timer' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.0.4 (Tối Ưu Siêu Nhẹ)
+            ## 🎉 Bản Phát Hành Vietsub AI v1.0.5 — Apple macOS Style & Subtitle Studio
 
-            Phiên bản nâng cấp tối ưu hóa dung lượng vượt trội, giảm tới **75%** dung lượng cài đặt mà vẫn giữ trọn vẹn 100% tính năng và khả năng chạy offline:
-            - **⚡ Giảm 75% dung lượng:** Bộ cài đặt macOS (`.dmg`) giảm từ 190MB xuống còn **81MB**. Bộ cài đặt Windows (`.zip`) giảm từ ~250MB xuống còn **~55MB**!
-            - **🛡️ Khử trùng lặp triệt để:** Loại bỏ toàn bộ file FFmpeg nhân bản, chỉ giữ đúng 1 file duy nhất.
-            - **🚀 Đọc thời lượng thông minh:** Tối ưu thuật toán đọc duration và nhận diện audio trực tiếp bằng FFmpeg, loại bỏ hoàn toàn gánh nặng của `ffprobe`.
-            - **🎵 Hỗ trợ Tải Nhạc MP3 (320kbps):** Tải trực tiếp âm thanh chất lượng phòng thu từ link YouTube, TikTok, Facebook, SoundCloud,...
-            - **⚡ 1-Click Trích Xuất Audio Từ Video:** Bóc tách âm thanh sang MP3 cực nhanh (chỉ 1-2 giây) từ file video đã chọn trên máy.
-            - **💾 Tự Động Lưu Video Gốc:** Khi tải link để làm Vietsub, ứng dụng tự động lưu một bản sao video gốc nét nhất vào thư mục xuất (`[Gốc]...`).
-            - **🎯 Tùy Chọn Chất Lượng Tải:** Hỗ trợ lựa chọn chất lượng video (Gốc/Cao nhất, 1080p, 720p, 480p).
-            - **🚀 Bộ Launcher Tiện Ích:** Bổ sung file chạy nhanh 1 click `Chay_Thu_VietsubAI.bat` (Windows) và `Chay_Thu_VietsubAI.command` (macOS).
+            Phiên bản nâng cấp đột phá với thiết kế hiện đại chuẩn Apple macOS, bổ sung Studio Chỉnh Sửa Phụ Đề trực quan và tối ưu hóa trải nghiệm người dùng:
+            - **🍎 Giao Diện Chuẩn Apple macOS:** Thiết kế lại toàn bộ giao diện theo phong cách macOS Sequoia hiện đại, bo góc mượt mà, dark mode cao cấp, màu sắc hài hòa.
+            - **✏️ Trình Chỉnh Sửa Phụ Đề (Subtitle Studio):** Cho phép xem trước và sửa từng câu phụ đề tiếng Việt, chỉnh mốc thời gian (+/- ms), tìm và thay thế lỗi phiên âm hàng loạt.
+            - **🛡️ Thuật Toán Chống Chồng Đè Chữ (`find_clean_raw_video`):** Tự động truy vết và sử dụng video gốc sạch chưa có phụ đề khi ghép lại video, triệt tiêu hoàn toàn hiện tượng 2 lớp chữ đè lên nhau.
+            - **⏱️ Đồng Hồ Đếm Thời Gian (Live Timer):** Tích hợp viên nang đếm giây thời gian thực (Timer Capsule) tại thanh công cụ Terminal và ghi nhận tổng thời gian vào Console Log.
+            - **⭐️ Thông Tin Tác Giả & Bản Quyền:** Đặt thông tin *"Được phát triển bởi Bành Đại Dũng - 0982333097"* trang trọng tại Header, Footer và Hộp thoại Cài đặt.
+            - **🤖 Chế Độ Gemini AI Tự Động (Auto Fallback):** Mặc định tự động chọn model AI tối ưu nhất (ưu tiên 3.8 -> 3.7 -> 3.6 -> 2.5), hạn chế tối đa lỗi quota hay gián đoạn dịch.
+            - **💾 Tùy Chọn Xuất File Linh Hoạt:** Thêm lựa chọn tích chọn xuất kèm file `.SRT` và file văn bản `.TXT` lời thoại ra thư mục xuất.
+            - **⚡ Đóng Gói Siêu Nhẹ (81MB macOS):** Bộ cài đặt tích hợp sẵn FFmpeg, chạy 100% offline, không cần cài đặt thêm bất kỳ công cụ nào.
 
             ### 📥 Tải xuống cài đặt:
+            - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.
             - **Windows:** Tải file `VietsubAI-Windows.zip` bên dưới, giải nén và mở file `VietsubAI.exe` để chạy ngay (100% Offline).
-            - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo ứng dụng vào thư mục `Applications`.
           draft: false
           prerelease: false
           files: |
