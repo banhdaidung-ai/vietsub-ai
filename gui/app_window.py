@@ -1536,6 +1536,8 @@ class AppWindow(ctk.CTk):
             self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "menu_subtitle_style"):
+                self.menu_subtitle_style.configure(state="disabled")
             if hasattr(self, "chk_review_sub"):
                 self.chk_review_sub.configure(state="disabled")
             if hasattr(self, "chk_export_srt"):
@@ -1608,6 +1610,8 @@ class AppWindow(ctk.CTk):
             self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "menu_subtitle_style"):
+                self.menu_subtitle_style.configure(state="disabled")
             if hasattr(self, "chk_export_srt"):
                 self.chk_export_srt.configure(state="disabled")
             if hasattr(self, "chk_export_txt"):
@@ -1679,6 +1683,8 @@ class AppWindow(ctk.CTk):
             self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "menu_subtitle_style"):
+                self.menu_subtitle_style.configure(state="disabled")
             if hasattr(self, "chk_export_srt"):
                 self.chk_export_srt.configure(state="disabled")
             if hasattr(self, "chk_export_txt"):
@@ -1768,6 +1774,8 @@ class AppWindow(ctk.CTk):
             self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "menu_subtitle_style"):
+                self.menu_subtitle_style.configure(state="disabled")
         except Exception:
             pass
 
@@ -1848,6 +1856,8 @@ class AppWindow(ctk.CTk):
             self.menu_target_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "menu_subtitle_style"):
+                self.menu_subtitle_style.configure(state="disabled")
         except Exception:
             pass
 
@@ -2157,6 +2167,8 @@ class AppWindow(ctk.CTk):
                         else:
                             self.switch_tts.configure(state="normal")
                         self.font_slider_main.configure(state="normal")
+                        if hasattr(self, "menu_subtitle_style"):
+                            self.menu_subtitle_style.configure(state="normal")
                         if hasattr(self, "chk_review_sub"):
                             self.chk_review_sub.configure(state="normal")
                         if hasattr(self, "chk_export_srt"):
