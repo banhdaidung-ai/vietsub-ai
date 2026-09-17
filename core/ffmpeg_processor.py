@@ -243,3 +243,69 @@ class FFmpegProcessor:
                 except Exception:
                     pass
 
+
+def extract_audio(
+    video_path: str,
+    output_dir: str,
+    audio_format: str = "mp3",
+    bitrate: str = "320k",
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+) -> str:
+    """
+    Trích xuất âm thanh từ file video sang file audio (MP3 320kbps / M4A / WAV).
+    Cực nhanh (1-2s) vì không phải re-encode video.
+    """
+    from pathlib import Path
+
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Không tìm thấy file video: {video_path}")
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    base_name = Path(video_path).stem
+    ext = audio_format.lower().strip(".")
+    if ext not in ("mp3", "m4a", "wav"):
+        ext = "mp3"
+
+    out_path = str(Path(output_dir) / f"{base_name}.{ext}")
+
+    # Đảm bảo không trùng tên nếu file đã tồn tại
+    counter = 1
+    while os.path.exists(out_path):
+        out_path = str(Path(output_dir) / f"{base_name} ({counter}).{ext}")
+        counter += 1
+
+    ffmpeg_bin = get_ffmpeg_path() or "ffmpeg"
+
+    cmd = [ffmpeg_bin, "-y", "-i", video_path, "-vn"]
+
+    if ext == "mp3":
+        cmd += ["-c:a", "libmp3lame", "-b:a", bitrate]
+    elif ext == "m4a":
+        cmd += ["-c:a", "aac", "-b:a", bitrate]
+    elif ext == "wav":
+        cmd += ["-c:a", "pcm_s16le"]
+    else:
+        cmd += ["-c:a", "libmp3lame", "-b:a", "320k"]
+
+    cmd.append(out_path)
+
+    if progress_callback:
+        progress_callback(0.3, "Đang bóc tách luồng âm thanh...")
+
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    if res.returncode != 0:
+        clean_err = _extract_error(res.stderr)
+        raise RuntimeError(f"FFmpeg lỗi khi trích xuất âm thanh:\n{clean_err}")
+
+    if progress_callback:
+        progress_callback(1.0, "Trích xuất âm thanh thành công!")
+
+    return out_path
+

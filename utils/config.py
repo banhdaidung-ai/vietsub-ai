@@ -20,6 +20,10 @@ DEFAULT_CONFIG = {
     "enable_tts": True,           # Có tạo giọng đọc AI hay không
     "subtitle_font_size": 10,     # Cỡ chữ phụ đề nhỏ gọn tầm 10 (mặc định 10)
     "subtitle_margin_v": 8,       # Khoảng cách đáy (mặc định 8 để nằm dưới phụ đề gốc)
+    "download_quality": "best",   # "best" (Gốc/Cao nhất) | "1080p" | "720p" | "480p"
+    "url_action_mode": "download_only",  # "download_only" (Chỉ tải gốc) | "download_audio" (Chỉ tải nhạc) | "download_and_sub" (Tải & Vietsub luôn)
+    "audio_format": "mp3",        # "mp3" (320kbps) | "m4a" | "wav"
+    "audio_bitrate": "320k",      # "320k" | "256k" | "192k"
 }
 
 

@@ -98,8 +98,19 @@ class Pipeline:
                 progress_callback=self._make_progress_cb(0.0, 0.1),
                 is_cancelled=lambda: self._cancelled,
             )
-            video_path = downloader.download(input_source, tmp_dir)
+            dl_quality = config.get("download_quality", "best")
+            video_path = downloader.download(input_source, tmp_dir, quality=dl_quality)
             self._log(f"✅ Tải xong: {Path(video_path).name}")
+
+            # Lưu một bản sao video gốc chất lượng cao vào thư mục xuất
+            try:
+                import shutil
+                raw_filename = f"[Gốc] {Path(video_path).name}"
+                raw_out_path = os.path.join(output_dir, raw_filename)
+                shutil.copy2(video_path, raw_out_path)
+                self._log(f"💾 Đã lưu sẵn video gốc tại: {raw_filename}")
+            except Exception:
+                pass
         else:
             video_path = input_source
             self._log(f"📂 File input: {Path(video_path).name}")

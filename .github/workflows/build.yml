@@ -127,16 +127,18 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.1' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.1 — Đã Nhúng Sẵn FFmpeg' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.3' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.3 — Tải Nhạc MP3 320kbps & Tự Động Lưu Video Gốc' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI
+            ## 🎉 Bản Phát Hành Vietsub AI v1.0.3
 
-            Phiên bản nâng cấp giải quyết triệt để vấn đề giải mã video và phụ đề:
-            - **Đã nhúng sẵn FFmpeg & FFprobe:** Cả bản Windows (`VietsubAI-Windows.zip`) và macOS (`VietsubAI.dmg`) đã được đóng gói sẵn bộ giải mã FFmpeg tĩnh, tải về giải nén là chạy ngay 100% offline, không bao giờ bị báo thiếu FFmpeg.
-            - **Tính năng 1-Click Tải FFmpeg:** Tích hợp hộp thoại tự động tải FFmpeg trực tiếp trong giao diện ứng dụng nếu cần cập nhật lại.
-            - **Bảo vệ hệ thống:** Khắc phục hoàn toàn lỗi crash stream khi chạy ứng dụng GUI trên Windows.
-            - **Mục quản lý FFmpeg:** Hiển thị trực quan đường dẫn và trạng thái FFmpeg trong menu Cài đặt.
+            Phiên bản nâng cấp mạnh mẽ toàn diện cho Vietsub AI:
+            - **🎵 Hỗ trợ Tải Nhạc MP3 (320kbps):** Tải trực tiếp âm thanh chất lượng phòng thu từ link YouTube, TikTok, Facebook, SoundCloud,...
+            - **⚡ 1-Click Trích Xuất Audio Từ Video:** Bóc tách âm thanh sang MP3 cực nhanh (chỉ 1-2 giây) từ file video đã chọn trên máy.
+            - **💾 Tự Động Lưu Video Gốc:** Khi tải link để làm Vietsub, ứng dụng tự động lưu một bản sao video gốc nét nhất vào thư mục xuất (`[Gốc]...`) để lưu trữ.
+            - **🎯 Tùy Chọn Chất Lượng Tải:** Hỗ trợ lựa chọn chất lượng video (Gốc/Cao nhất, 1080p, 720p, 480p).
+            - **🛡️ Đã Nhúng Sẵn Toàn Diện FFmpeg & FFprobe:** Chạy mượt mà offline 100% trên cả Windows và macOS, không cần cài đặt thêm.
+            - **🚀 Bộ Launcher Tiện Ích:** Bổ sung file chạy nhanh 1 click `Chay_Thu_VietsubAI.bat` (Windows) và `Chay_Thu_VietsubAI.command` (macOS).
 
             ### 📥 Tải xuống cài đặt:
             - **Windows:** Tải file `VietsubAI-Windows.zip` bên dưới, giải nén và mở file `VietsubAI.exe` để chạy.
