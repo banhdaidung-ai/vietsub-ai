@@ -47,6 +47,22 @@ def check_has_audio(video_path: str) -> bool:
     except Exception:
         return True
 
+def _extract_error(stderr: str) -> str:
+    if not stderr:
+        return "Không có thông tin chi tiết."
+    filtered = []
+    for line in stderr.splitlines():
+        line_s = line.strip()
+        if not line_s:
+            continue
+        if any(line_s.startswith(p) for p in [
+            "--enable-", "configuration:", "built with", "libav", "libsw", "libpostproc",
+            "Input #", "Stream #", "Output #", "Metadata:", "Duration:"
+        ]):
+            continue
+        filtered.append(line_s)
+    return "\n".join(filtered[-8:]) if filtered else stderr[-400:]
+
 
 class FFmpegProcessor:
     def __init__(
@@ -62,7 +78,7 @@ class FFmpegProcessor:
     def process_video(
         self,
         video_path: str,
-        srt_path: str,
+        srt_path: str = "",
         tts_audio_path: Optional[str] = None,
         output_path: str = "",
         audio_mode: str = "mix",
@@ -71,7 +87,9 @@ class FFmpegProcessor:
         sub_only: bool = False,
         subtitle_font_size: int = 10,
         subtitle_margin_v: int = 8,
+        subtitles_path: str = "",
     ):
+        srt_path = srt_path or subtitles_path
         """
         Ghép video cuối cùng:
         - Burn phụ đề SRT tiếng Việt lên video
@@ -88,11 +106,23 @@ class FFmpegProcessor:
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
 
-        # Tạo file SRT tạm trong tempdir với tên ASCII thuần túy
+        # Tạo file SRT tạm trong tempdir với tên ASCII thuần túy và chuẩn hóa nội dung SRT
+        from utils.srt_parser import normalize_srt_content, parse_srt
+
         temp_dir = tempfile.gettempdir()
         temp_srt_name = f"sub_{int(time.time() * 1000)}.srt"
         temp_srt_path = os.path.join(temp_dir, temp_srt_name)
-        shutil.copy2(srt_path, temp_srt_path)
+
+        try:
+            with open(srt_path, "r", encoding="utf-8", errors="replace") as f_in:
+                raw_srt = f_in.read()
+            clean_srt = normalize_srt_content(raw_srt)
+            with open(temp_srt_path, "w", encoding="utf-8") as f_out:
+                f_out.write(clean_srt)
+            has_subtitles = len(parse_srt(clean_srt)) > 0
+        except Exception:
+            shutil.copy2(srt_path, temp_srt_path)
+            has_subtitles = True
 
         subtitle_style = (
             "Fontname=Arial,"
@@ -111,26 +141,11 @@ class FFmpegProcessor:
         # triệt tiêu hoàn toàn lỗi ký tự ổ đĩa (C:, F:) và dấu 2 chấm trong filtergraph của FFmpeg trên Windows
         sub_filter = f"subtitles=filename='{temp_srt_name}':force_style='{subtitle_style}'"
 
-        def _extract_error(stderr: str) -> str:
-            if not stderr:
-                return "Không có thông tin chi tiết."
-            filtered = []
-            for line in stderr.splitlines():
-                line_s = line.strip()
-                if not line_s:
-                    continue
-                if any(line_s.startswith(p) for p in [
-                    "--enable-", "configuration:", "built with", "libav", "libsw", "libpostproc",
-                    "Input #", "Stream #", "Output #", "Metadata:", "Duration:"
-                ]):
-                    continue
-                filtered.append(line_s)
-            return "\n".join(filtered[-8:]) if filtered else stderr[-400:]
-
         try:
             def run_render(mode: str) -> subprocess.CompletedProcess:
+                v_filter = f"[0:v]{sub_filter}[vout]" if has_subtitles else "[0:v]null[vout]"
                 if mode == "replace":
-                    filter_complex = f"[0:v]{sub_filter}[vout]"
+                    filter_complex = v_filter
                     cmd = [
                         ffmpeg, "-y",
                         "-i", abs_video_path,
@@ -148,7 +163,7 @@ class FFmpegProcessor:
                     ]
                 else:
                     filter_complex = (
-                        f"[0:v]{sub_filter}[vout];"
+                        f"{v_filter};"
                         f"[0:a]"
                         f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
                         f"volume={original_volume}[orig];"
@@ -186,7 +201,10 @@ class FFmpegProcessor:
                 cmd = [
                     ffmpeg, "-y",
                     "-i", abs_video_path,
-                    "-vf", sub_filter,
+                ]
+                if has_subtitles:
+                    cmd += ["-vf", sub_filter]
+                cmd += [
                     "-c:v", "libx264",
                     "-crf", "23",
                     "-preset", "medium",
@@ -206,7 +224,10 @@ class FFmpegProcessor:
                     cmd_fallback = [
                         ffmpeg, "-y",
                         "-i", abs_video_path,
-                        "-vf", sub_filter,
+                    ]
+                    if has_subtitles:
+                        cmd_fallback += ["-vf", sub_filter]
+                    cmd_fallback += [
                         "-c:v", "libx264",
                         "-crf", "23",
                         "-preset", "medium",

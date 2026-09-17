@@ -19,8 +19,8 @@ class SRTSegment:
 
 def time_to_ms(time_str: str) -> int:
     """Chuyển timestamp SRT '00:01:23,456' sang milliseconds."""
-    time_str = time_str.strip().replace(",", ".")
-    parts = time_str.split(":")
+    norm = normalize_timestamp(time_str).replace(",", ".")
+    parts = norm.split(":")
     h, m, s = int(parts[0]), int(parts[1]), float(parts[2])
     return int((h * 3600 + m * 60 + s) * 1000)
 
@@ -36,10 +36,61 @@ def ms_to_time(ms: int) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms_rem:03d}"
 
 
+def normalize_timestamp(ts_str: str) -> str:
+    """
+    Chuẩn hóa timestamp SRT thành đúng định dạng 3 phần: 'HH:MM:SS,mmm'.
+    Tự động sửa các lỗi timestamp phổ biến do AI trả về:
+    - MM:SS,mmm -> 00:MM:SS,mmm (ví dụ: 00:03,000 -> 00:00:03,000)
+    - MM:SS.mmm -> 00:MM:SS,mmm
+    - H:MM:SS,mmm -> 0H:MM:SS,mmm
+    - MM:SS -> 00:MM:SS,000
+    - HH:MM:SS -> HH:MM:SS,000
+    """
+    ts_str = ts_str.strip().replace(".", ",")
+    parts = ts_str.split(":")
+    if len(parts) == 2:  # MM:SS,mmm hoặc MM:SS
+        m_str, s_ms = parts[0], parts[1]
+        s_parts = s_ms.split(",")
+        s = int(s_parts[0]) if s_parts[0].isdigit() else 0
+        ms_str = s_parts[1] if len(s_parts) > 1 else "000"
+        ms = int(ms_str.ljust(3, "0")[:3]) if ms_str.isdigit() else 0
+        m = int(m_str) if m_str.isdigit() else 0
+        h = m // 60
+        m = m % 60
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    elif len(parts) == 3:  # HH:MM:SS,mmm hoặc HH:MM:SS
+        h_str, m_str, s_ms = parts[0], parts[1], parts[2]
+        s_parts = s_ms.split(",")
+        s = int(s_parts[0]) if s_parts[0].isdigit() else 0
+        ms_str = s_parts[1] if len(s_parts) > 1 else "000"
+        ms = int(ms_str.ljust(3, "0")[:3]) if ms_str.isdigit() else 0
+        h = int(h_str) if h_str.isdigit() else 0
+        m = int(m_str) if m_str.isdigit() else 0
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    return ts_str
+
+
+def normalize_srt_content(srt_content: str) -> str:
+    """
+    Quét và tự động chuẩn hóa toàn bộ timestamp trong nội dung SRT về chuẩn ISO SRT (HH:MM:SS,mmm).
+    Đảm bảo 100% tương thích với libass / FFmpeg không bao giờ bị lỗi 'Unable to open sub.srt'.
+    """
+    if not srt_content:
+        return ""
+
+    def replace_arrow(match):
+        start = normalize_timestamp(match.group(1))
+        end = normalize_timestamp(match.group(2))
+        return f"{start} --> {end}"
+
+    pattern = r"(\d{1,2}:\d{1,2}(?::\d{1,2})?(?:[,\.]\d{1,3})?)\s*-->\s*(\d{1,2}:\d{1,2}(?::\d{1,2})?(?:[,\.]\d{1,3})?)"
+    return re.sub(pattern, replace_arrow, srt_content)
+
+
 def parse_srt(srt_content: str) -> List[SRTSegment]:
-    """Parse nội dung SRT thành danh sách SRTSegment."""
+    """Parse nội dung SRT thành danh sách SRTSegment (tự động chuẩn hóa timestamp)."""
     segments: List[SRTSegment] = []
-    content = srt_content.strip().replace("\r\n", "\n").replace("\r", "\n")
+    content = normalize_srt_content(srt_content.strip().replace("\r\n", "\n").replace("\r", "\n"))
     blocks = re.split(r"\n\s*\n+", content)
 
     for block in blocks:
@@ -112,5 +163,18 @@ def clean_srt_response(response_text: str) -> str:
             start_idx = i
             break
 
-    return "\n".join(lines[start_idx:]).strip()
+    cleaned = "\n".join(lines[start_idx:]).strip()
+    return normalize_srt_content(cleaned)
+
+
+def segments_to_srt(segments: List[SRTSegment]) -> str:
+    """Chuyển danh sách SRTSegment thành chuỗi nội dung SRT chuẩn ISO."""
+    blocks = []
+    for idx, seg in enumerate(segments, start=1):
+        start_ts = normalize_timestamp(seg.start)
+        end_ts = normalize_timestamp(seg.end)
+        text = seg.text.strip()
+        if text:
+            blocks.append(f"{idx}\n{start_ts} --> {end_ts}\n{text}")
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
 

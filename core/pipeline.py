@@ -7,6 +7,7 @@ import os
 import queue
 import shutil
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -16,7 +17,7 @@ from core.ffmpeg_processor import FFmpegProcessor
 from core.gemini_processor import GeminiProcessor
 from core.tts_generator import TTSGenerator
 from utils.ffmpeg_check import get_video_duration
-from utils.srt_parser import parse_srt
+from utils.srt_parser import normalize_srt_content, parse_srt, segments_to_srt
 
 
 class Pipeline:
@@ -104,7 +105,6 @@ class Pipeline:
 
             # Lưu một bản sao video gốc chất lượng cao vào thư mục xuất
             try:
-                import shutil
                 raw_filename = f"[Gốc] {Path(video_path).name}"
                 raw_out_path = os.path.join(output_dir, raw_filename)
                 shutil.copy2(video_path, raw_out_path)
@@ -133,10 +133,11 @@ class Pipeline:
 
         gemini = GeminiProcessor(
             api_key=config["gemini_api_key"],
-            preferred_model=config.get("gemini_model", "gemini-3.8-flash"),
+            preferred_model=config.get("gemini_model", "auto"),
             progress_callback=self._make_progress_cb(0.10, 0.50),
         )
-        srt_content = gemini.process_video(video_path, source_lang=source_lang)
+        raw_srt = gemini.process_video(video_path, source_lang=source_lang)
+        srt_content = normalize_srt_content(raw_srt)
 
         # Lưu SRT tạm
         srt_tmp = os.path.join(tmp_dir, "subtitles.srt")
@@ -151,24 +152,59 @@ class Pipeline:
             self._log(f"✅ Dịch xong: {len(segments)} đoạn phụ đề tiếng Việt")
             self._progress(0.50, "Dịch xong")
 
-        # Lưu SRT ra output folder
+        # ── Bước 2.5: Duyệt & Chỉnh sửa phụ đề (nếu người dùng bật) ────────
+        if config.get("review_subtitles", False):
+            self._log("✏️ Đang mở Trình chỉnh sửa phụ đề để Sếp kiểm tra & duyệt...")
+            self._progress(0.50, "Đang duyệt phụ đề")
+            review_event = threading.Event()
+            review_holder = {"segments": segments, "cancelled": False}
+            self._put(
+                "review_subtitles",
+                segments=segments,
+                srt_content=srt_content,
+                video_path=video_path,
+                event=review_event,
+                holder=review_holder,
+            )
+            review_event.wait()
+
+            if review_holder.get("cancelled", False) or self._cancelled:
+                self._log("⚠️ Tiến trình đã dừng tại bước duyệt phụ đề.")
+                return
+
+            segments = review_holder.get("segments", segments)
+            srt_content = segments_to_srt(segments)
+            with open(srt_tmp, "w", encoding="utf-8") as f:
+                f.write(srt_content)
+            self._log(f"✅ Đã cập nhật {len(segments)} đoạn phụ đề sau khi chỉnh sửa.")
+
+        # Tùy chọn lưu file rời ra output folder
         video_stem = Path(video_path).stem
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         suffix = "sub_vi" if source_lang == "vi" else "vietsub"
-        output_srt = os.path.join(output_dir, f"{video_stem}_{suffix}_{timestamp}.srt")
-        shutil.copy2(srt_tmp, output_srt)
-        self._log(f"💾 Đã lưu phụ đề: {Path(output_srt).name}")
 
-        # Lưu file text (.txt) lời thoại ra output folder
-        output_txt = os.path.join(output_dir, f"{video_stem}_{suffix}_{timestamp}.txt")
-        txt_lines = []
-        for seg in segments:
-            clean_line = " ".join(seg.text.split()).strip()
-            if clean_line:
-                txt_lines.append(clean_line)
-        with open(output_txt, "w", encoding="utf-8") as f:
-            f.write("\n".join(txt_lines) + "\n")
-        self._log(f"📝 Đã lưu file text: {Path(output_txt).name}")
+        export_srt = config.get("export_srt", True)
+        export_txt = config.get("export_txt", True)
+        output_srt = None
+        output_txt = None
+
+        # Lưu SRT rời ra output folder (nếu được chọn)
+        if export_srt:
+            output_srt = os.path.join(output_dir, f"{video_stem}_{suffix}_{timestamp}.srt")
+            shutil.copy2(srt_tmp, output_srt)
+            self._log(f"💾 Đã lưu file phụ đề: {Path(output_srt).name}")
+
+        # Lưu file text (.txt) lời thoại ra output folder (nếu được chọn)
+        if export_txt:
+            output_txt = os.path.join(output_dir, f"{video_stem}_{suffix}_{timestamp}.txt")
+            txt_lines = []
+            for seg in segments:
+                clean_line = " ".join(seg.text.split()).strip()
+                if clean_line:
+                    txt_lines.append(clean_line)
+            with open(output_txt, "w", encoding="utf-8") as f:
+                f.write("\n".join(txt_lines) + "\n")
+            self._log(f"📝 Đã lưu file text: {Path(output_txt).name}")
 
         if self._cancelled:
             self._log("⚠️ Đã hủy bởi người dùng.")
@@ -234,8 +270,10 @@ class Pipeline:
         self._log("─" * 45)
         self._log("🎉 HOÀN TẤT! File đầu ra:")
         self._log(f"   🎬 Video : {Path(output_video).name}")
-        self._log(f"   📄 Phụ đề: {Path(output_srt).name}")
-        self._log(f"   📝 Văn bản: {Path(output_txt).name}")
+        if output_srt:
+            self._log(f"   📄 Phụ đề: {Path(output_srt).name}")
+        if output_txt:
+            self._log(f"   📝 Văn bản: {Path(output_txt).name}")
         self._log(f"   📁 Thư mục: {output_dir}")
 
         self._put("success", video_path=output_video, srt_path=output_srt, txt_path=output_txt)

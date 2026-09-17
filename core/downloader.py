@@ -1,6 +1,9 @@
 import json
 import os
+import re
+import shutil
 import subprocess
+import urllib.parse
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -89,7 +92,6 @@ class VideoDownloader:
         if ffmpeg_bin:
             ydl_opts["ffmpeg_location"] = ffmpeg_bin
 
-        import shutil
         node_bin = shutil.which("node") or (
             "/usr/local/bin/node" if os.path.exists("/usr/local/bin/node") else None
         )
@@ -98,7 +100,6 @@ class VideoDownloader:
 
         # Chuẩn hóa link nếu là Douyin modal_id
         if "douyin.com" in url and "modal_id=" in url:
-            import re
             m = re.search(r"modal_id=(\d+)", url)
             if m:
                 url = f"https://www.douyin.com/video/{m.group(1)}"
@@ -152,7 +153,6 @@ class VideoDownloader:
     ) -> str:
         """Tải trực tiếp luồng audio qua HTTP stream và chuyển đổi định dạng bằng FFmpeg."""
         from curl_cffi import requests
-        import re
 
         clean_title = re.sub(r'[\\/*?:"<>|]', "", title).strip() or "audio_track"
         target_ext = audio_format.lower().strip(".")
@@ -256,7 +256,6 @@ class VideoDownloader:
 
         # ── 1. HỖ TRỢ CHUYÊN BIỆT: Epidemic Sound (www.epidemicsound.com) ──
         if "epidemicsound.com" in url_clean.lower() and "audiocdn.epidemicsound.com" not in url_clean:
-            import re
             from curl_cffi import requests
 
             self._report(0.05, "Đang kết nối tới Epidemic Sound qua kết nối an toàn...")
@@ -289,7 +288,6 @@ class VideoDownloader:
 
         # ── 2. HỖ TRỢ CHUYÊN BIỆT: Artlist.io (artlist.io/royalty-free-music/song/...) ──
         if "artlist.io" in url_clean.lower() and "cms-public-artifacts.artlist.io" not in url_clean and "cdn.artlist.io" not in url_clean:
-            import re
             from curl_cffi import requests
 
             self._report(0.05, "Đang kết nối tới Artlist qua kết nối an toàn...")
@@ -330,7 +328,6 @@ class VideoDownloader:
         ) or "audiocdn.epidemicsound.com" in url_clean or "cms-public-artifacts.artlist.io" in url_clean or "cdn.artlist.io" in url_clean
 
         if is_direct_audio:
-            import urllib.parse
             parsed = urllib.parse.urlparse(url_clean)
             raw_filename = Path(parsed.path).stem or "audio_download"
             return self._download_direct_stream(
@@ -396,7 +393,6 @@ class VideoDownloader:
         if ffmpeg_bin:
             ydl_opts["ffmpeg_location"] = ffmpeg_bin
 
-        import shutil
         node_bin = shutil.which("node") or (
             "/usr/local/bin/node" if os.path.exists("/usr/local/bin/node") else None
         )

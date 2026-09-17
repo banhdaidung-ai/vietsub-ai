@@ -9,21 +9,25 @@ import time
 from typing import Callable, Optional
 
 from google import genai
+from google.genai import types
 
 from utils.srt_parser import clean_srt_response
 
 # Prompt dịch từ Tiếng Trung sang Tiếng Việt
-PROMPT_TRANSLATE_ZH_TO_VI = """Bạn là chuyên gia dịch phụ đề từ tiếng Trung sang tiếng Việt.
+PROMPT_TRANSLATE_ZH_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề phim và video chuyên nghiệp từ tiếng Trung (Chinese) sang tiếng Việt.
 
-NHIỆM VỤ: Nghe tất cả lời thoại tiếng Trung trong video này và tạo phụ đề tiếng Việt chính xác theo định dạng SRT.
+NHIỆM VỤ: Nghe tất cả lời thoại tiếng Trung trong video này và dịch sang phụ đề tiếng Việt chính xác, tự nhiên 100% theo định dạng SRT.
 
 YÊU CẦU DỊCH THUẬT:
-- Dịch sang tiếng Việt tự nhiên, linh hoạt, đúng ngữ cảnh — không dịch từng chữ máy móc
-- Giữ nguyên tên người, địa danh (dùng phiên âm Hán Việt hoặc tên thông dụng nếu có)
-- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, tương đương độ dài và nhịp điệu của câu nói gốc trong video để khi đọc bằng giọng nói (TTS) không bị quá nhanh hay dồn chữ
-- Bao gồm TẤT CẢ lời thoại, không bỏ sót câu nào
-- Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng
-- Timestamp phải khớp chính xác với thời điểm nói trong video
+- Dịch sang tiếng Việt tự nhiên, linh hoạt, chuẩn văn phong đời sống hoặc bối cảnh phim ảnh — tuyệt đối không dịch máy tính word-by-word khô cứng.
+- Nếu là bài hát / ca từ tiếng Trung: Dịch mượt mà, bay bổng đúng ý nghĩa ca từ và giai điệu.
+- Tách bạch giọng nói khỏi tiếng nhạc nền (BGM) và hiệu ứng âm thanh (SFX) để bắt trọn từng câu thoại.
+- Giữ nguyên tên người, địa danh (dùng phiên âm Hán Việt hoặc tên thông dụng quen thuộc).
+- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, tương đương độ dài và nhịp điệu của câu nói gốc trong video để khi đọc bằng giọng nói (TTS) không bị quá nhanh hay dồn chữ.
+- Bao gồm TẤT CẢ lời thoại, không bỏ sót câu nào.
+- Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng.
+- Timestamp phải khớp chính xác với thời điểm nói trong video.
+- BẮT BUỘC định dạng thời gian 3 phần: Giờ:Phút:Giây,mili-giây (HH:MM:SS,mmm). VÍ DỤ: 00:00:01,000 --> 00:00:04,500. TUYỆT ĐỐI KHÔNG bỏ phần giờ 00:.
 
 ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
 Chỉ xuất nội dung SRT thuần túy, không có markdown (không dùng ```srt), không có giải thích, không có text ngoài SRT.
@@ -47,11 +51,13 @@ NHIỆM VỤ: Nghe tất cả lời thoại tiếng Anh trong video này và t�
 YÊU CẦU DỊCH THUẬT:
 - Dịch sang tiếng Việt tự nhiên, gãy gọn, chuẩn văn phong đời sống hoặc chuyên ngành — không dịch word-by-word máy móc.
 - Dịch chuẩn các thành ngữ (idioms), tiếng lóng (slang), khẩu ngữ giao tiếp theo cách diễn đạt tự nhiên của người Việt.
+- Tách bạch giọng nói khỏi nhạc nền (BGM) và beat nhạc.
 - Giữ nguyên tên riêng, địa danh quốc tế, thương hiệu hoặc thuật ngữ chuyên ngành phổ biến khi cần thiết.
 - TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, cô đọng, độ dài tương xứng với thời lượng nói của câu gốc trong video để khi tạo giọng đọc (TTS) không bị quá nhanh hoặc dồn dập chữ.
 - Bao gồm TẤT CẢ lời thoại, không bỏ sót bất kỳ câu nào.
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng để người xem kịp đọc và vừa vặn khung hình.
 - Timestamp phải khớp chính xác từng mili-giây với thời điểm người nói phát âm trong video.
+- BẮT BUỘC định dạng thời gian 3 phần: Giờ:Phút:Giây,mili-giây (HH:MM:SS,mmm). VÍ DỤ: 00:00:01,200 --> 00:00:04,800. TUYỆT ĐỐI KHÔNG bỏ phần giờ 00:.
 
 ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
 Chỉ xuất nội dung SRT thuần túy, không có markdown (không dùng ```srt), không có giải thích, không có text ngoài SRT.
@@ -68,17 +74,22 @@ Trong video này, chúng ta sẽ cùng khám phá bí quyết...
 BẮT ĐẦU XUẤT SRT NGAY:"""
 
 # Prompt phiên âm tiếng Việt tạo phụ đề
-PROMPT_TRANSCRIBE_VI = """Bạn là chuyên gia phiên âm và tạo phụ đề tiếng Việt chuyên nghiệp hàng đầu.
+PROMPT_TRANSCRIBE_VI = """Bạn là chuyên gia thẩm âm, phiên âm và tạo phụ đề tiếng Việt chuyên nghiệp hàng đầu.
 
-NHIỆM VỤ: Lắng nghe toàn bộ lời thoại tiếng Việt trong video này và tạo phụ đề tiếng Việt chuẩn xác 100% theo định dạng SRT.
+NHIỆM VỤ: Lắng nghe kỹ toàn bộ lời thoại / bài hát / giọng nói tiếng Việt trong video này và tạo phụ đề tiếng Việt chuẩn xác 100% theo định dạng SRT.
 
-YÊU CẦU PHIÊN ÂM:
-- Ghi lại trung thực và chính xác từng câu từ mà người nói phát âm trong video sang tiếng Việt có dấu đầy đủ.
-- Chuẩn hóa chính tả tiếng Việt, đặt dấu thanh đúng vị trí, sửa các lỗi phát âm sai/nói lắp nhưng vẫn giữ đúng ý nghĩa nguyên bản.
-- Ngắt câu hợp lý, gãy gọn theo hơi thở và ý nghĩa diễn đạt của câu nói, tránh dòng quá dài.
-- Bao gồm TẤT CẢ lời thoại trong video, không được bỏ qua hoặc tóm tắt bất kỳ đoạn nào.
-- Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng để dễ theo dõi trên màn hình video/Shorts/Reels/TikTok.
-- Timestamp phải khớp chính xác tuyệt đối từng mili-giây với lúc nhân vật bắt đầu và kết thúc nói câu đó.
+YÊU CẦU PHIÊN ÂM CHÍNH XÁC (QUAN TRỌNG):
+1. NHẬN DIỆN BÀI HÁT & CA TỪ CHUẨN:
+- Nếu video chứa bài hát, ca khúc, rap, dân ca, ca dao, nhạc thiếu nhi, nhạc trẻ, nhạc Trung Thu hoặc âm thanh TikTok: Hãy lắng nghe kết hợp đối chiếu với lời gốc chuẩn xác của bài hát để ghi đúng từng từ, tuyệt đối không chép nhầm sang từ vô nghĩa do giai điệu kéo dài hoặc nhạc nền lấn át giọng hát (Ví dụ bài Cây Đa Quán Dốc: "Cùng nhau trèo lên quán dốc, lốc ca lốc cốc tìm gốc cây đa, nghỉ chân têm ba miếng trầu...", KHÔNG ĐƯỢC nghe nhầm thành "Cốc ca cốc cốc" hay "tìm ba miếng trầu").
+2. PHÂN BIỆT RÕ PHỤ ÂM ĐẦU & DẤU THANH DỄ NHẦM:
+- Chú ý cao độ các phụ âm dễ nhầm lẫn khi hát hoặc phát âm nhanh: "l" vs "c" ("lốc ca lốc cốc" chứ không phải "cốc ca cốc cốc"), "l" vs "n", "t" vs "đ" ("têm trầu" chứ không phải "tìm trầu"), "s" vs "x", "tr" vs "ch", "d/gi/r".
+- Giữ câu từ có nghĩa mạch lạc, chuẩn văn phong và chính tả tiếng Việt có dấu đầy đủ.
+3. TÁCH BẠCH GIỌNG NÓI KHỎI NHẠC NỀN & BEAT:
+- Tập trung phân tích dải tần giọng người (vocal), loại bỏ ảnh hưởng của tiếng beat, tiếng bass, nhạc cụ đệm hoặc tạp âm xung quanh.
+4. ĐỘ DÀI & ĐỊNH DẠNG:
+- Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng để vừa vặn khung hình video.
+- Timestamp phải khớp chính xác từng mili-giây với thời điểm bắt đầu và kết thúc câu nói/câu hát.
+- BẮT BUỘC định dạng thời gian 3 phần: Giờ:Phút:Giây,mili-giây (HH:MM:SS,mmm). VÍ DỤ: 00:00:01,000 --> 00:00:03,800. TUYỆT ĐỐI KHÔNG bỏ phần giờ 00:.
 
 ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
 Chỉ xuất nội dung SRT thuần túy, không có markdown (không dùng ```srt), không có giải thích, không có text ngoài SRT.
@@ -266,6 +277,9 @@ class GeminiProcessor:
                         response = self.client.models.generate_content(
                             model=model_name,
                             contents=[video_file, prompt],
+                            config=types.GenerateContentConfig(
+                                temperature=0.0,
+                            ),
                         )
                         if response and response.text:
                             break

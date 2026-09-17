@@ -117,17 +117,17 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", pady=(0, 4))
 
         self.model_map = {
+            "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5)": "auto",
             "⚡ Gemini 3.8 Flash (Mới nhất, siêu nhanh & thông minh)": "gemini-3.8-flash",
             "🚀 Gemini 3.7 Flash (Thế hệ mới 3.7)": "gemini-3.7-flash",
             "✨ Gemini 3.6 Flash (Tốc độ cao 3.6)": "gemini-3.6-flash",
             "🛡️ Gemini 2.5 Flash (Bản chuẩn, ít nghẽn tải nhất)": "gemini-2.5-flash",
-            "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5)": "auto",
         }
         self.reverse_model_map = {v: k for k, v in self.model_map.items()}
 
-        current_model = self.config.get("gemini_model", "gemini-3.8-flash")
+        current_model = self.config.get("gemini_model", "auto")
         current_model_display = self.reverse_model_map.get(
-            current_model, "⚡ Gemini 3.8 Flash (Mới nhất, siêu nhanh & thông minh)"
+            current_model, "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5)"
         )
 
         self.model_display_var = ctk.StringVar(value=current_model_display)
@@ -338,7 +338,25 @@ class SettingsDialog(ctk.CTkToplevel):
             text="💡 Gợi ý: Cỡ 10-12pt & cách đáy 8px giúp chữ Vietsub nhỏ gọn, thanh lịch, nằm ngay dưới phụ đề gốc video.",
             font=("Arial", 11),
             text_color="#94A3B8",
-        ).pack(anchor="w", padx=16, pady=(0, 12))
+        ).pack(anchor="w", padx=16, pady=(0, 6))
+
+        # Tùy chọn duyệt & sửa phụ đề trước khi ghép
+        review_sub_box = ctk.CTkFrame(card_sub, fg_color="transparent")
+        review_sub_box.pack(fill="x", padx=16, pady=(0, 14))
+
+        self.review_sub_var = ctk.BooleanVar(value=self.config.get("review_subtitles", False))
+        self.chk_review_sub = ctk.CTkCheckBox(
+            review_sub_box,
+            text="✏️ Bật bảng duyệt & chỉnh sửa phụ đề trước khi ghép video",
+            variable=self.review_sub_var,
+            font=("Arial", 12, "bold"),
+            text_color="#F8FAFC",
+            checkmark_color="#FFFFFF",
+            fg_color="#10B981",
+            hover_color="#059669",
+            border_color="#64748B",
+        )
+        self.chk_review_sub.pack(side="left")
 
         # ─── SECTION 4: OUTPUT DIRECTORY ───
         card_out = ctk.CTkFrame(scroll_container, corner_radius=12, border_width=1, border_color="#334155")
@@ -351,7 +369,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", padx=16, pady=(14, 6))
 
         out_box = ctk.CTkFrame(card_out, fg_color="transparent")
-        out_box.pack(fill="x", padx=16, pady=(0, 14))
+        out_box.pack(fill="x", padx=16, pady=(0, 10))
 
         self.out_dir_var = ctk.StringVar(value=self.config.get("output_dir", ""))
         self.out_entry = ctk.CTkEntry(
@@ -374,6 +392,36 @@ class SettingsDialog(ctk.CTkToplevel):
             hover_color="#475569",
             command=self._browse_out_dir,
         ).pack(side="right")
+
+        # Tùy chọn xuất file kèm theo (.srt / .txt)
+        export_extra_box = ctk.CTkFrame(card_out, fg_color="transparent")
+        export_extra_box.pack(fill="x", padx=16, pady=(0, 14))
+
+        self.export_srt_var = ctk.BooleanVar(value=self.config.get("export_srt", True))
+        self.chk_srt = ctk.CTkCheckBox(
+            export_extra_box,
+            text="Xuất kèm file phụ đề (.srt)",
+            variable=self.export_srt_var,
+            font=("Arial", 12),
+            text_color="#CBD5E1",
+            fg_color="#4F46E5",
+            hover_color="#4338CA",
+            border_color="#64748B",
+        )
+        self.chk_srt.pack(side="left", padx=(0, 20))
+
+        self.export_txt_var = ctk.BooleanVar(value=self.config.get("export_txt", True))
+        self.chk_txt = ctk.CTkCheckBox(
+            export_extra_box,
+            text="Xuất kèm file văn bản lời thoại (.txt)",
+            variable=self.export_txt_var,
+            font=("Arial", 12),
+            text_color="#CBD5E1",
+            fg_color="#4F46E5",
+            hover_color="#4338CA",
+            border_color="#64748B",
+        )
+        self.chk_txt.pack(side="left")
 
         # ─── SECTION 5: FFMPEG ENGINE ───
         card_ffmpeg = ctk.CTkFrame(scroll_container, corner_radius=12, border_width=1, border_color="#334155")
@@ -412,6 +460,34 @@ class SettingsDialog(ctk.CTkToplevel):
 
         self._update_ffmpeg_status()
 
+        # ─── SECTION 6: AUTHOR / ABOUT ───
+        card_about = ctk.CTkFrame(scroll_container, corner_radius=12, border_width=1, border_color="#334155")
+        card_about.pack(fill="x", pady=8)
+
+        about_inner = ctk.CTkFrame(card_about, fg_color="transparent")
+        about_inner.pack(fill="x", padx=16, pady=12)
+
+        ctk.CTkLabel(
+            about_inner,
+            text="⭐️ Tác Giả & Bản Quyền",
+            font=("Arial", 13, "bold"),
+            text_color="#F8FAFC",
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            about_inner,
+            text="Được phát triển bởi Bành Đại Dũng - 0982333097",
+            font=("Arial", 12, "bold"),
+            text_color="#38BDF8",
+        ).pack(anchor="w", pady=(4, 2))
+
+        ctk.CTkLabel(
+            about_inner,
+            text="Ứng dụng Vietsub AI & Lồng Tiếng Chuyên Nghiệp trên macOS.",
+            font=("Arial", 11),
+            text_color="#94A3B8",
+        ).pack(anchor="w")
+
         # ─── FOOTER ACTIONS ───
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(10, 20))
@@ -433,8 +509,8 @@ class SettingsDialog(ctk.CTkToplevel):
             width=140,
             height=38,
             corner_radius=8,
-            fg_color="#4F46E5",
-            hover_color="#4338CA",
+            fg_color="#0A84FF",
+            hover_color="#0071E3",
             font=("Arial", 13, "bold"),
             command=self._save,
         ).pack(side="right")
@@ -504,6 +580,9 @@ class SettingsDialog(ctk.CTkToplevel):
         self.config["subtitle_font_size"] = int(self.font_size_slider.get())
         self.config["subtitle_margin_v"] = int(self.margin_v_slider.get())
         self.config["output_dir"] = self.out_dir_var.get()
+        self.config["export_srt"] = self.export_srt_var.get()
+        self.config["export_txt"] = self.export_txt_var.get()
+        self.config["review_subtitles"] = self.review_sub_var.get()
 
         save_config(self.config)
         self.on_save(self.config)

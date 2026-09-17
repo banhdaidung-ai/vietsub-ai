@@ -8,6 +8,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -17,20 +18,57 @@ from PIL import Image, ImageTk
 from core.pipeline import Pipeline
 from gui.ffmpeg_download_dialog import FFmpegDownloadDialog
 from gui.settings_dialog import SettingsDialog
+from gui.subtitle_editor_dialog import SubtitleEditorDialog
 from utils.config import load_config, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+# ═════════════════════════════════════════════════════════
+# APPLE macOS SEQUOIA / SONOMA DESIGN SYSTEM TOKENS
+# ═════════════════════════════════════════════════════════
+BG_WINDOW = "#141518"          # macOS deep space canvas
+BG_HEADER = "#191B22"          # Unified macOS titlebar
+BORDER_HEADER = "#292D39"      # Titlebar subtle border
+BG_CARD = "#1C1F27"            # Apple surface card
+BORDER_CARD = "#2E3342"        # Crisp 1px card border
+BG_INSET = "#121419"           # Inset input background
+BORDER_INSET = "#252834"       # Inset border
+BG_PILL = "#272B37"            # Tool button / elevated pill
+BG_PILL_HOVER = "#343949"      # Hover state for pills
+
+APPLE_BLUE = "#0A84FF"         # Apple System Blue
+APPLE_BLUE_HOVER = "#0071E3"   # Apple Blue Active
+APPLE_GREEN = "#30D158"        # Apple System Green / Mint
+APPLE_GREEN_HOVER = "#28B84C"
+APPLE_GREEN_BG = "#0D2C1A"     # Subtle green pill bg
+APPLE_GREEN_BORDER = "#195935" # Green pill border
+APPLE_ORANGE = "#FF9F0A"       # Apple Amber
+APPLE_ORANGE_HOVER = "#D98200"
+APPLE_ORANGE_BG = "#331E08"    # Subtle amber pill bg
+APPLE_ORANGE_BORDER = "#633B11"
+APPLE_RED = "#FF453A"          # Apple Crimson
+APPLE_RED_HOVER = "#D73327"
+APPLE_RED_BG = "#361413"       # Subtle red pill bg
+APPLE_RED_BORDER = "#692523"
+APPLE_INDIGO = "#5E5CE6"       # Apple Indigo
+APPLE_CYAN = "#64D2FF"         # Apple Cyan
+
+TEXT_PRIMARY = "#F5F5F7"       # Apple pure bright text
+TEXT_SECONDARY = "#98989F"     # Apple SF muted caption
+TEXT_TERTIARY = "#636366"      # Apple subtle placeholder
+TEXT_MUTED = "#636366"         # Apple muted gray for inactive steps
+
 
 class AppWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Vietsub AI — Dịch & Lồng Tiếng Video Chuyên Nghiệp")
-        self.geometry("900x740")
-        self.minsize(840, 680)
+        self.title("Vietsub AI Studio — macOS Edition")
+        self.geometry("920x780")
+        self.minsize(860, 720)
+        self.configure(fg_color=BG_WINDOW)
 
         self.config = load_config()
         self.task_queue = queue.Queue()
@@ -38,6 +76,11 @@ class AppWindow(ctk.CTk):
         self._is_processing = False
         self._download_cancelled = False
         self._current_step = 0
+
+        # Stopwatch / Timer đếm thời gian thực hiện
+        self._timer_start_time = None
+        self._timer_running = False
+        self._timer_after_id = None
 
         self._set_app_icon()
         self._build_ui()
@@ -69,15 +112,21 @@ class AppWindow(ctk.CTk):
         self.grid_rowconfigure(3, weight=1)
 
         # ═════════════════════════════════════════════════════════
-        # 1. HEADER BAR
+        # 1. HEADER BAR (macOS UNIFIED TITLEBAR)
         # ═════════════════════════════════════════════════════════
-        header_card = ctk.CTkFrame(self, fg_color="transparent")
-        header_card.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 10))
+        header_card = ctk.CTkFrame(
+            self,
+            fg_color=BG_HEADER,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_HEADER,
+        )
+        header_card.grid(row=0, column=0, sticky="ew", padx=20, pady=(14, 8))
         header_card.grid_columnconfigure(1, weight=1)
 
         # Left: Brand Logo & Title
         brand_frame = ctk.CTkFrame(header_card, fg_color="transparent")
-        brand_frame.grid(row=0, column=0, sticky="w")
+        brand_frame.grid(row=0, column=0, sticky="w", padx=16, pady=10)
 
         # Load Icon
         try:
@@ -86,7 +135,7 @@ class AppWindow(ctk.CTk):
             else:
                 logo_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
             if logo_path.exists():
-                logo_img = ctk.CTkImage(Image.open(logo_path), size=(38, 38))
+                logo_img = ctk.CTkImage(Image.open(logo_path), size=(36, 36))
                 lbl_logo = ctk.CTkLabel(brand_frame, image=logo_img, text="")
                 lbl_logo.pack(side="left", padx=(0, 10))
         except Exception:
@@ -101,55 +150,56 @@ class AppWindow(ctk.CTk):
         ctk.CTkLabel(
             title_row,
             text="Vietsub AI",
-            font=("Arial", 22, "bold"),
-            text_color="#F8FAFC",
+            font=("Arial", 20, "bold"),
+            text_color=TEXT_PRIMARY,
         ).pack(side="left")
 
         ctk.CTkLabel(
             title_row,
-            text="PRO",
+            text="PRO STUDIO",
             font=("Arial", 10, "bold"),
-            fg_color="#4F46E5",
+            fg_color=APPLE_BLUE,
             text_color="#FFFFFF",
-            corner_radius=4,
-            width=38,
-            height=18,
+            corner_radius=6,
+            width=84,
+            height=20,
         ).pack(side="left", padx=8)
 
         ctk.CTkLabel(
             title_inner,
-            text="Tự động dịch, lồng tiếng & ghép phụ đề chuẩn xác bằng Gemini AI",
+            text="Studio phụ đề & lồng tiếng AI • Phát triển bởi Bành Đại Dũng - 0982333097",
             font=("Arial", 11),
-            text_color="#94A3B8",
+            text_color=TEXT_SECONDARY,
         ).pack(anchor="w")
 
         # Right: System Health Badges & Controls
         controls_frame = ctk.CTkFrame(header_card, fg_color="transparent")
-        controls_frame.grid(row=0, column=2, sticky="e")
+        controls_frame.grid(row=0, column=2, sticky="e", padx=16, pady=10)
 
         # Status Badges
         self.badge_ffmpeg = ctk.CTkButton(
             controls_frame,
             text="⚡ FFmpeg: Đang kiểm tra",
             font=("Arial", 11, "bold"),
-            fg_color="#1E293B",
-            hover_color="#334155",
-            text_color="#94A3B8",
-            corner_radius=6,
-            height=26,
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_SECONDARY,
+            corner_radius=14,
+            height=28,
             command=self._on_ffmpeg_badge_click,
         )
         self.badge_ffmpeg.pack(side="left", padx=4)
 
         self.badge_api = ctk.CTkLabel(
             controls_frame,
-            text="🔑 Gemini: Đang kiểm tra",
+            text="🤖 Gemini: Tự động",
             font=("Arial", 11, "bold"),
-            fg_color="#1E293B",
-            text_color="#94A3B8",
-            corner_radius=6,
-            padx=10,
+            fg_color=BG_PILL,
+            text_color=APPLE_CYAN,
+            corner_radius=14,
+            padx=12,
             pady=4,
+            height=28,
         )
         self.badge_api.pack(side="left", padx=4)
 
@@ -157,11 +207,11 @@ class AppWindow(ctk.CTk):
         self.btn_theme = ctk.CTkButton(
             controls_frame,
             text="🌓",
-            width=36,
-            height=32,
+            width=34,
+            height=28,
             corner_radius=8,
-            fg_color="#1E293B",
-            hover_color="#334155",
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
             command=self._toggle_theme,
         )
         self.btn_theme.pack(side="left", padx=4)
@@ -170,30 +220,42 @@ class AppWindow(ctk.CTk):
         ctk.CTkButton(
             controls_frame,
             text="⚙️ Cài đặt",
-            font=("Arial", 12, "bold"),
-            width=90,
-            height=32,
+            font=("Arial", 11, "bold"),
+            width=88,
+            height=28,
             corner_radius=8,
-            fg_color="#334155",
-            hover_color="#475569",
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_PRIMARY,
             command=self._open_settings,
         ).pack(side="left", padx=(4, 0))
 
         # ═════════════════════════════════════════════════════════
-        # 2. INPUT SECTION (CARD VIEW)
+        # 2. INPUT SECTION (APPLE CARD VIEW)
         # ═════════════════════════════════════════════════════════
-        input_card = ctk.CTkFrame(self, corner_radius=14, border_width=1, border_color="#334155")
-        input_card.grid(row=1, column=0, sticky="ew", padx=24, pady=6)
+        input_card = ctk.CTkFrame(
+            self,
+            corner_radius=14,
+            fg_color=BG_CARD,
+            border_width=1,
+            border_color=BORDER_CARD,
+        )
+        input_card.grid(row=1, column=0, sticky="ew", padx=20, pady=6)
 
         self.tabview = ctk.CTkTabview(
             input_card,
-            height=165,
+            height=168,
             corner_radius=10,
-            segmented_button_selected_color="#4F46E5",
-            segmented_button_selected_hover_color="#4338CA",
+            fg_color="transparent",
+            segmented_button_fg_color=BG_INSET,
+            segmented_button_selected_color=APPLE_BLUE,
+            segmented_button_selected_hover_color=APPLE_BLUE_HOVER,
+            segmented_button_unselected_color=BG_INSET,
+            segmented_button_unselected_hover_color=BG_PILL,
+            text_color=TEXT_PRIMARY,
             command=self._on_tab_changed,
         )
-        self.tabview.pack(fill="x", padx=12, pady=(6, 12))
+        self.tabview.pack(fill="x", padx=14, pady=(6, 10))
 
         tab_file = self.tabview.add("📂 Chọn File Video Trên Máy")
         tab_url = self.tabview.add("🌐 Dán Link Online (TikTok, YouTube, Facebook...)")
@@ -206,10 +268,14 @@ class AppWindow(ctk.CTk):
         self.file_entry = ctk.CTkEntry(
             file_box,
             textvariable=self.file_path_var,
-            placeholder_text="Chưa có file nào được chọn... Bấm nút bên cạnh để duyệt file video",
+            placeholder_text="Chưa chọn video nào... Nhấp 'Chọn Video' để duyệt tệp",
             state="readonly",
             height=38,
             corner_radius=8,
+            fg_color=BG_INSET,
+            border_color=BORDER_INSET,
+            border_width=1,
+            text_color=TEXT_PRIMARY,
             font=("Consolas", 12),
         )
         self.file_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
@@ -218,11 +284,12 @@ class AppWindow(ctk.CTk):
             file_box,
             text="📂 Chọn Video...",
             font=("Arial", 12, "bold"),
-            width=130,
+            width=135,
             height=38,
             corner_radius=8,
-            fg_color="#4F46E5",
-            hover_color="#4338CA",
+            fg_color=APPLE_BLUE,
+            hover_color=APPLE_BLUE_HOVER,
+            text_color="#FFFFFF",
             command=self._browse_file,
         ).pack(side="right")
 
@@ -233,7 +300,7 @@ class AppWindow(ctk.CTk):
             file_action_bar,
             text="💡 Hỗ trợ: MP4, MKV, MOV, AVI, WEBM",
             font=("Arial", 11),
-            text_color="#94A3B8",
+            text_color=TEXT_SECONDARY,
         ).pack(side="left")
 
         self.btn_extract_audio = ctk.CTkButton(
@@ -243,8 +310,11 @@ class AppWindow(ctk.CTk):
             width=190,
             height=28,
             corner_radius=6,
-            fg_color="#D97706",
-            hover_color="#B45309",
+            fg_color=APPLE_ORANGE_BG,
+            hover_color=APPLE_ORANGE_HOVER,
+            text_color=APPLE_ORANGE,
+            border_width=1,
+            border_color=APPLE_ORANGE_BORDER,
             command=self._on_extract_audio_from_file_clicked,
         )
         self.btn_extract_audio.pack(side="right")
@@ -260,6 +330,10 @@ class AppWindow(ctk.CTk):
             placeholder_text="Dán link TikTok, YouTube, Facebook, SoundCloud, Artlist hoặc direct audio vào đây...",
             height=38,
             corner_radius=8,
+            fg_color=BG_INSET,
+            border_color=BORDER_INSET,
+            border_width=1,
+            text_color=TEXT_PRIMARY,
             font=("Consolas", 12),
         )
         self.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
@@ -267,11 +341,13 @@ class AppWindow(ctk.CTk):
         ctk.CTkButton(
             url_input_box,
             text="📋 Dán",
+            font=("Arial", 11, "bold"),
             width=65,
             height=38,
             corner_radius=8,
-            fg_color="#334155",
-            hover_color="#475569",
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_PRIMARY,
             command=self._paste_clipboard,
         ).pack(side="left", padx=(0, 6))
 
@@ -281,8 +357,9 @@ class AppWindow(ctk.CTk):
             width=38,
             height=38,
             corner_radius=8,
-            fg_color="#334155",
-            hover_color="#475569",
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_SECONDARY,
             command=lambda: self.url_var.set(""),
         ).pack(side="right")
 
@@ -295,7 +372,7 @@ class AppWindow(ctk.CTk):
             url_controls_bar,
             text="🎯 Chế độ:",
             font=("Arial", 12, "bold"),
-            text_color="#F8FAFC",
+            text_color=TEXT_PRIMARY,
         ).pack(side="left", padx=(0, 6))
 
         self.url_mode_display_map = {
@@ -313,18 +390,13 @@ class AppWindow(ctk.CTk):
             value=self.url_mode_display_map.get(current_url_mode, "⬇️ Video Gốc")
         )
 
-        # Màu sắc ban đầu cho nút chế độ
-        init_color = "#059669"
-        if current_url_mode == "download_audio":
-            init_color = "#D97706"
-        elif current_url_mode == "download_and_sub":
-            init_color = "#4F46E5"
+        init_color = APPLE_GREEN if current_url_mode == "download_only" else (APPLE_ORANGE if current_url_mode == "download_audio" else APPLE_BLUE)
 
         self.seg_url_mode = ctk.CTkSegmentedButton(
             url_controls_bar,
             values=["⬇️ Video Gốc", "🎵 Chỉ Tải Nhạc / Audio", "⚡ Tải & Vietsub Luôn"],
             command=self._on_url_mode_changed,
-            height=32,
+            height=30,
             corner_radius=8,
             selected_color=init_color,
             selected_hover_color=init_color,
@@ -337,7 +409,7 @@ class AppWindow(ctk.CTk):
             url_controls_bar,
             text="🎵 Định dạng:" if current_url_mode == "download_audio" else "🎬 Độ nét:",
             font=("Arial", 12, "bold"),
-            text_color="#F8FAFC",
+            text_color=TEXT_PRIMARY,
         )
         self.lbl_format_or_quality.pack(side="left", padx=(0, 6))
 
@@ -349,34 +421,42 @@ class AppWindow(ctk.CTk):
         self.reverse_quality_map = {v: k for k, v in self.quality_display_map.items()}
 
         self.audio_format_display_map = {
-            "mp3": "🌟 MP3 (320kbps - Cao nhất)",
-            "m4a": "🎧 M4A (Chất lượng gốc)",
-            "wav": "🎼 WAV (Lossless không nén)",
+            "mp3": "MP3 (320kbps Studio)",
+            "m4a": "M4A (Apple AAC)",
+            "wav": "WAV (Lossless)",
         }
         self.reverse_audio_format_map = {v: k for k, v in self.audio_format_display_map.items()}
 
         current_quality = self.config.get("download_quality", "best")
-        current_audio_format = self.config.get("audio_format", "mp3")
+        current_quality_display = self.quality_display_map.get(current_quality, "🌟 Cao nhất (Gốc 4K/2K/1080p)")
+        self.download_quality_var = ctk.StringVar(value=current_quality_display)
 
-        self.download_quality_var = ctk.StringVar(
-            value=self.quality_display_map.get(current_quality, "🌟 Cao nhất (Gốc 4K/2K/1080p)")
+        current_audio_fmt = self.config.get("audio_format", "mp3")
+        current_audio_fmt_display = self.audio_format_display_map.get(current_audio_fmt, "MP3 (320kbps Studio)")
+        self.download_audio_format_var = ctk.StringVar(value=current_audio_fmt_display)
+
+        active_menu_values = (
+            list(self.audio_format_display_map.values())
+            if current_url_mode == "download_audio"
+            else list(self.quality_display_map.values())
         )
-        self.download_audio_format_var = ctk.StringVar(
-            value=self.audio_format_display_map.get(current_audio_format, "🌟 MP3 (320kbps - Cao nhất)")
+        active_menu_var = (
+            self.download_audio_format_var
+            if current_url_mode == "download_audio"
+            else self.download_quality_var
         )
 
-        is_audio = (current_url_mode == "download_audio")
         self.quality_menu = ctk.CTkOptionMenu(
             url_controls_bar,
-            values=list(self.audio_format_display_map.values()) if is_audio else list(self.quality_display_map.values()),
-            variable=self.download_audio_format_var if is_audio else self.download_quality_var,
+            values=active_menu_values,
+            variable=active_menu_var,
             command=self._on_format_or_quality_changed,
-            width=200,
-            height=32,
+            height=30,
             corner_radius=8,
-            fg_color="#1E293B",
-            button_color="#334155",
-            button_hover_color="#475569",
+            fg_color=BG_INSET,
+            button_color=BG_PILL,
+            button_hover_color=BG_PILL_HOVER,
+            text_color=TEXT_PRIMARY,
         )
         self.quality_menu.pack(side="left")
 
@@ -388,7 +468,7 @@ class AppWindow(ctk.CTk):
             url_hint_bar,
             text="",
             font=("Arial", 11),
-            text_color="#34D399",
+            text_color=APPLE_GREEN,
         )
         self.lbl_url_hint.pack(side="left")
 
@@ -396,22 +476,31 @@ class AppWindow(ctk.CTk):
             url_hint_bar,
             text="Hỗ trợ: 🎵 TikTok  •  📺 YouTube  •  📘 Facebook  •  ⚡ Bilibili  •  🎧 SoundCloud/Artlist",
             font=("Arial", 11),
-            text_color="#94A3B8",
+            text_color=TEXT_SECONDARY,
         ).pack(side="right")
 
-        # ── Thanh Tùy Chọn: Ngôn ngữ nguồn, Cỡ chữ & Lồng tiếng AI ──
-        options_bar = ctk.CTkFrame(input_card, fg_color="#1E293B", corner_radius=10, border_width=1, border_color="#334155")
-        options_bar.pack(fill="x", padx=12, pady=(0, 10))
+        # ── Thanh Tùy Chọn: Ngôn ngữ, Lồng tiếng AI, Cỡ chữ & Tùy chọn xuất file ──
+        options_bar = ctk.CTkFrame(
+            input_card,
+            fg_color=BG_INSET,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_INSET,
+        )
+        options_bar.pack(fill="x", padx=14, pady=(0, 12))
 
-        # 1. Trái: Chọn ngôn ngữ nguồn
-        lang_box = ctk.CTkFrame(options_bar, fg_color="transparent")
-        lang_box.pack(side="left", padx=12, pady=8)
+        # Dòng 1: Ngôn ngữ nguồn (trái) & Lồng tiếng AI (phải)
+        opts_row1 = ctk.CTkFrame(options_bar, fg_color="transparent")
+        opts_row1.pack(fill="x", padx=12, pady=(8, 4))
+
+        lang_box = ctk.CTkFrame(opts_row1, fg_color="transparent")
+        lang_box.pack(side="left")
 
         ctk.CTkLabel(
             lang_box,
             text="🌐 Ngôn ngữ:",
             font=("Arial", 12, "bold"),
-            text_color="#F8FAFC",
+            text_color=TEXT_PRIMARY,
         ).pack(side="left", padx=(0, 6))
 
         self.lang_display_map = {
@@ -428,23 +517,60 @@ class AppWindow(ctk.CTk):
             lang_box,
             values=["🇨🇳 Tiếng Trung", "🇺🇸 Tiếng Anh", "🇻🇳 Tiếng Việt"],
             command=self._on_source_lang_change,
-            height=32,
+            height=30,
             corner_radius=8,
-            selected_color="#4F46E5",
-            selected_hover_color="#4338CA",
+            selected_color=APPLE_BLUE,
+            selected_hover_color=APPLE_BLUE_HOVER,
+            unselected_color=BG_CARD,
+            unselected_hover_color=BG_PILL_HOVER,
         )
         self.seg_lang.set(self.lang_display_map.get(current_lang, "🇨🇳 Tiếng Trung"))
         self.seg_lang.pack(side="left")
 
-        # 2. Giữa: Thanh trượt cỡ chữ phụ đề (Trực quan ngay trên màn hình chính)
-        font_box = ctk.CTkFrame(options_bar, fg_color="transparent")
-        font_box.pack(side="left", padx=(16, 12), pady=8)
+        right_top_box = ctk.CTkFrame(opts_row1, fg_color="transparent")
+        right_top_box.pack(side="right")
+
+        self.btn_editor = ctk.CTkButton(
+            right_top_box,
+            text="✏️ Sửa Sub & Ghép Lại",
+            font=("Arial", 11, "bold"),
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            border_width=1,
+            border_color=BORDER_CARD,
+            text_color=TEXT_PRIMARY,
+            height=30,
+            corner_radius=8,
+            command=self._open_standalone_editor,
+        )
+        self.btn_editor.pack(side="left", padx=(0, 14))
+
+        current_enable_tts = self.config.get("enable_tts", True if current_lang != "vi" else False)
+        self.enable_tts_var = ctk.BooleanVar(value=current_enable_tts)
+
+        self.switch_tts = ctk.CTkSwitch(
+            right_top_box,
+            text="🎙️ Lồng tiếng AI",
+            font=("Arial", 12, "bold"),
+            text_color=TEXT_PRIMARY,
+            progress_color=APPLE_GREEN,
+            command=self._on_tts_toggle,
+            variable=self.enable_tts_var,
+        )
+        self.switch_tts.pack(side="left")
+
+        # Dòng 2: Cỡ chữ sub (trái) & Tùy chọn Duyệt sub & Xuất kèm SRT / TXT (phải)
+        opts_row2 = ctk.CTkFrame(options_bar, fg_color="transparent")
+        opts_row2.pack(fill="x", padx=12, pady=(4, 8))
+
+        font_box = ctk.CTkFrame(opts_row2, fg_color="transparent")
+        font_box.pack(side="left")
 
         ctk.CTkLabel(
             font_box,
             text="📝 Cỡ chữ sub:",
             font=("Arial", 12, "bold"),
-            text_color="#F8FAFC",
+            text_color=TEXT_PRIMARY,
         ).pack(side="left", padx=(0, 6))
 
         current_font_size = self.config.get("subtitle_font_size", 10)
@@ -455,8 +581,8 @@ class AppWindow(ctk.CTk):
             number_of_steps=16,
             width=110,
             command=self._on_main_font_slide,
-            progress_color="#6366F1",
-            button_color="#818CF8",
+            progress_color=APPLE_BLUE,
+            button_color="#99C7FF",
         )
         self.font_slider_main.set(current_font_size)
         self.font_slider_main.pack(side="left", padx=(0, 6))
@@ -465,90 +591,170 @@ class AppWindow(ctk.CTk):
             font_box,
             text=f"{int(current_font_size)} pt",
             font=("Consolas", 12, "bold"),
-            text_color="#38BDF8",
+            text_color=APPLE_CYAN,
             width=42,
         )
         self.lbl_font_main.pack(side="left")
 
-        # 3. Phải: Switch Lồng tiếng AI (TTS)
-        tts_box = ctk.CTkFrame(options_bar, fg_color="transparent")
-        tts_box.pack(side="right", padx=12, pady=8)
+        export_box = ctk.CTkFrame(opts_row2, fg_color="transparent")
+        export_box.pack(side="right")
 
-        current_enable_tts = self.config.get("enable_tts", True if current_lang != "vi" else False)
-        self.enable_tts_var = ctk.BooleanVar(value=current_enable_tts)
-
-        self.switch_tts = ctk.CTkSwitch(
-            tts_box,
-            text="🎙️ Lồng tiếng AI",
-            font=("Arial", 12, "bold"),
-            text_color="#F8FAFC",
-            progress_color="#10B981",
-            command=self._on_tts_toggle,
-            variable=self.enable_tts_var,
+        self.review_subtitles_var = ctk.BooleanVar(value=self.config.get("review_subtitles", False))
+        self.chk_review_sub = ctk.CTkCheckBox(
+            export_box,
+            text="✏️ Duyệt & sửa sub trước khi ghép",
+            variable=self.review_subtitles_var,
+            command=self._on_review_sub_toggle,
+            font=("Arial", 11, "bold"),
+            text_color=TEXT_PRIMARY,
+            checkmark_color="#FFFFFF",
+            fg_color=APPLE_GREEN,
+            hover_color=APPLE_GREEN_HOVER,
+            border_color=BORDER_CARD,
+            width=18,
+            height=18,
+            checkbox_width=18,
+            checkbox_height=18,
         )
-        self.switch_tts.pack(side="right")
+        self.chk_review_sub.pack(side="left", padx=(0, 14))
+
+        ctk.CTkLabel(
+            export_box,
+            text="📤 Xuất kèm:",
+            font=("Arial", 12, "bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left", padx=(0, 8))
+
+        self.export_srt_var = ctk.BooleanVar(value=self.config.get("export_srt", True))
+        self.chk_export_srt = ctk.CTkCheckBox(
+            export_box,
+            text="File .SRT",
+            variable=self.export_srt_var,
+            command=self._on_export_option_change,
+            font=("Arial", 11, "bold"),
+            text_color=TEXT_PRIMARY,
+            checkmark_color="#FFFFFF",
+            fg_color=APPLE_BLUE,
+            hover_color=APPLE_BLUE_HOVER,
+            border_color=BORDER_CARD,
+            width=18,
+            height=18,
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        self.chk_export_srt.pack(side="left", padx=(0, 12))
+
+        self.export_txt_var = ctk.BooleanVar(value=self.config.get("export_txt", True))
+        self.chk_export_txt = ctk.CTkCheckBox(
+            export_box,
+            text="File .TXT",
+            variable=self.export_txt_var,
+            command=self._on_export_option_change,
+            font=("Arial", 11, "bold"),
+            text_color=TEXT_PRIMARY,
+            checkmark_color="#FFFFFF",
+            fg_color=APPLE_BLUE,
+            hover_color=APPLE_BLUE_HOVER,
+            border_color=BORDER_CARD,
+            width=18,
+            height=18,
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        self.chk_export_txt.pack(side="left")
 
         # ═════════════════════════════════════════════════════════
-        # 3. PIPELINE STAGE TRACKER (4 BƯỚC XỬ LÝ)
+        # 3. PIPELINE STAGE TRACKER (macOS PROGRESS STEPPER)
         # ═════════════════════════════════════════════════════════
-        tracker_card = ctk.CTkFrame(self, corner_radius=12, fg_color="#1E293B", border_width=1, border_color="#334155")
-        tracker_card.grid(row=2, column=0, sticky="ew", padx=24, pady=6)
+        tracker_card = ctk.CTkFrame(
+            self,
+            corner_radius=12,
+            fg_color=BG_CARD,
+            border_width=1,
+            border_color=BORDER_CARD,
+        )
+        tracker_card.grid(row=2, column=0, sticky="ew", padx=20, pady=6)
         tracker_card.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         self.steps = []
         step_definitions = [
-            ("1", "📥 Tải Video"),
-            ("2", "🤖 AI Dịch Thuật"),
-            ("3", "🎙️ TTS Lồng Tiếng"),
-            ("4", "🎬 Ghép Sub & Xuất"),
+            ("1", "1  📥 Tải / Nhận Video"),
+            ("2", "2  🤖 Gemini AI Dịch"),
+            ("3", "3  🎙️ Lồng Tiếng AI"),
+            ("4", "4  🎬 Ghép Sub & Xuất"),
         ]
 
         for i, (num, name) in enumerate(step_definitions):
             step_box = ctk.CTkFrame(tracker_card, fg_color="transparent")
-            step_box.grid(row=0, column=i, padx=8, pady=8, sticky="ew")
+            step_box.grid(row=0, column=i, padx=6, pady=8, sticky="ew")
 
             pill = ctk.CTkLabel(
                 step_box,
                 text=name,
                 font=("Arial", 11, "bold"),
-                fg_color="#0F172A",
-                text_color="#64748B",
+                fg_color=BG_INSET,
+                text_color=TEXT_SECONDARY,
                 corner_radius=8,
-                height=30,
+                height=32,
             )
             pill.pack(fill="x")
             self.steps.append(pill)
 
         # ═════════════════════════════════════════════════════════
-        # 4. TERMINAL & LOG CONSOLE CARD
+        # 4. TERMINAL & LOG CONSOLE CARD (macOS CONSOLE WINDOW)
         # ═════════════════════════════════════════════════════════
-        log_card = ctk.CTkFrame(self, corner_radius=14, border_width=1, border_color="#334155")
-        log_card.grid(row=3, column=0, sticky="nsew", padx=24, pady=6)
+        log_card = ctk.CTkFrame(
+            self,
+            corner_radius=14,
+            fg_color=BG_CARD,
+            border_width=1,
+            border_color=BORDER_CARD,
+        )
+        log_card.grid(row=3, column=0, sticky="nsew", padx=20, pady=6)
         log_card.grid_columnconfigure(0, weight=1)
         log_card.grid_rowconfigure(1, weight=1)
 
-        # Terminal Header
+        # Terminal Header with macOS Traffic Lights
         term_header = ctk.CTkFrame(log_card, fg_color="transparent")
         term_header.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 6))
 
+        traffic_dots = ctk.CTkFrame(term_header, fg_color="transparent")
+        traffic_dots.pack(side="left", padx=(0, 10))
+
+        ctk.CTkLabel(traffic_dots, text="●", font=("Arial", 14), text_color="#FF5F56").pack(side="left", padx=2)
+        ctk.CTkLabel(traffic_dots, text="●", font=("Arial", 14), text_color="#FFBD2E").pack(side="left", padx=2)
+        ctk.CTkLabel(traffic_dots, text="●", font=("Arial", 14), text_color="#27C93F").pack(side="left", padx=2)
+
         ctk.CTkLabel(
             term_header,
-            text="📋 Nhật Ký Xử Lý (Studio Terminal)",
-            font=("Arial", 13, "bold"),
-            text_color="#F8FAFC",
+            text="Console — Studio Terminal",
+            font=("Arial", 12, "bold"),
+            text_color=TEXT_PRIMARY,
         ).pack(side="left")
 
         self.pct_badge = ctk.CTkLabel(
             term_header,
             text="0%",
             font=("Consolas", 11, "bold"),
-            fg_color="#1E293B",
-            text_color="#38BDF8",
+            fg_color=BG_INSET,
+            text_color=APPLE_CYAN,
             corner_radius=6,
             width=48,
             height=22,
         )
-        self.pct_badge.pack(side="left", padx=10)
+        self.pct_badge.pack(side="left", padx=(10, 4))
+
+        self.timer_badge = ctk.CTkLabel(
+            term_header,
+            text="⏱️ 00:00",
+            font=("Consolas", 11, "bold"),
+            fg_color=BG_INSET,
+            text_color=APPLE_ORANGE,
+            corner_radius=6,
+            width=76,
+            height=22,
+        )
+        self.timer_badge.pack(side="left", padx=4)
 
         ctk.CTkButton(
             term_header,
@@ -557,8 +763,9 @@ class AppWindow(ctk.CTk):
             width=70,
             height=24,
             corner_radius=6,
-            fg_color="#334155",
-            hover_color="#475569",
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_SECONDARY,
             command=self._clear_logs,
         ).pack(side="right")
 
@@ -566,21 +773,21 @@ class AppWindow(ctk.CTk):
         self.log_box = ctk.CTkTextbox(
             log_card,
             font=("Consolas", 12),
-            fg_color="#090D16",
-            text_color="#E2E8F0",
-            corner_radius=8,
+            fg_color="#0D0E12",
+            text_color="#D8DEE9",
+            corner_radius=10,
             border_width=1,
-            border_color="#1E293B",
+            border_color=BORDER_INSET,
         )
         self.log_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 10))
 
         # Progress Bar
         self.progress_bar = ctk.CTkProgressBar(
             log_card,
-            height=8,
+            height=7,
             corner_radius=4,
-            progress_color="#6366F1",
-            fg_color="#1E293B",
+            progress_color=APPLE_BLUE,
+            fg_color=BG_INSET,
         )
         self.progress_bar.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
         self.progress_bar.set(0.0)
@@ -589,7 +796,7 @@ class AppWindow(ctk.CTk):
         # 5. BOTTOM ACTION FOOTER
         # ═════════════════════════════════════════════════════════
         footer_card = ctk.CTkFrame(self, fg_color="transparent")
-        footer_card.grid(row=4, column=0, sticky="ew", padx=24, pady=(6, 16))
+        footer_card.grid(row=4, column=0, sticky="ew", padx=20, pady=(6, 16))
         footer_card.grid_columnconfigure(0, weight=1)
 
         # Status text left
@@ -608,11 +815,14 @@ class AppWindow(ctk.CTk):
         self.btn_open_folder = ctk.CTkButton(
             btn_group,
             text="📁 Mở Thư Mục Xuất",
-            width=140,
-            height=40,
+            width=145,
+            height=38,
             corner_radius=8,
-            fg_color="#1E293B",
-            hover_color="#334155",
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_CARD,
             font=("Arial", 12, "bold"),
             command=self._open_output_dir,
         )
@@ -622,10 +832,11 @@ class AppWindow(ctk.CTk):
             btn_group,
             text="⏹ Hủy",
             width=80,
-            height=40,
+            height=38,
             corner_radius=8,
-            fg_color="#991B1B",
-            hover_color="#7F1D1D",
+            fg_color=APPLE_RED_BG,
+            hover_color=APPLE_RED,
+            text_color=APPLE_RED,
             state="disabled",
             font=("Arial", 12, "bold"),
             command=self._cancel,
@@ -636,14 +847,35 @@ class AppWindow(ctk.CTk):
             btn_group,
             text="🚀 BẮT ĐẦU DỊCH",
             width=185,
-            height=40,
+            height=38,
             corner_radius=8,
             font=("Arial", 13, "bold"),
-            fg_color="#4F46E5",
-            hover_color="#4338CA",
+            fg_color=APPLE_BLUE,
+            hover_color=APPLE_BLUE_HOVER,
             command=self._on_main_action_clicked,
         )
         self.btn_start.pack(side="left")
+
+        # ═════════════════════════════════════════════════════════
+        # 6. AUTHOR & BRANDING BAR (macOS FOOTER STRIP)
+        # ═════════════════════════════════════════════════════════
+        credit_bar = ctk.CTkFrame(self, fg_color="transparent")
+        credit_bar.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 10))
+        credit_bar.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            credit_bar,
+            text="⭐️ Được phát triển bởi Bành Đại Dũng - 0982333097",
+            font=("Arial", 11, "bold"),
+            text_color=APPLE_CYAN,
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            credit_bar,
+            text="Vietsub AI Studio • macOS Edition",
+            font=("Arial", 10),
+            text_color=TEXT_TERTIARY,
+        ).pack(side="right")
 
     def _toggle_theme(self):
         current = ctk.get_appearance_mode()
@@ -662,6 +894,47 @@ class AppWindow(ctk.CTk):
 
     def _clear_logs(self):
         self.log_box.delete("1.0", "end")
+        if hasattr(self, "timer_badge"):
+            self.timer_badge.configure(text="⏱️ 00:00", text_color=APPLE_ORANGE)
+
+    def _start_timer(self):
+        """Bắt đầu đếm thời gian thực hiện (stopwatch)."""
+        self._timer_start_time = time.time()
+        self._timer_running = True
+        if hasattr(self, "timer_badge"):
+            self.timer_badge.configure(text="⏱️ 00:00", text_color=APPLE_ORANGE)
+        self._tick_timer()
+
+    def _tick_timer(self):
+        """Cập nhật đồng hồ đếm giây mỗi giây."""
+        if not self._timer_running or self._timer_start_time is None:
+            return
+        elapsed = int(time.time() - self._timer_start_time)
+        mins = elapsed // 60
+        secs = elapsed % 60
+        if hasattr(self, "timer_badge"):
+            self.timer_badge.configure(text=f"⏱️ {mins:02d}:{secs:02d}")
+        self._timer_after_id = self.after(1000, self._tick_timer)
+
+    def _stop_timer(self, success: bool = True) -> str:
+        """Dừng đồng hồ đếm và trả về chuỗi mm:ss."""
+        self._timer_running = False
+        if self._timer_after_id:
+            try:
+                self.after_cancel(self._timer_after_id)
+            except Exception:
+                pass
+            self._timer_after_id = None
+        if self._timer_start_time is not None:
+            elapsed = int(time.time() - self._timer_start_time)
+            mins = elapsed // 60
+            secs = elapsed % 60
+            elapsed_str = f"{mins:02d}:{secs:02d}"
+            color = APPLE_GREEN if success else APPLE_RED
+            if hasattr(self, "timer_badge"):
+                self.timer_badge.configure(text=f"⏱️ {elapsed_str}", text_color=color)
+            return elapsed_str
+        return "00:00"
 
     def _set_active_step(self, step_idx: int):
         """Cập nhật giao diện 4 bước của Pipeline: 0=None, 1=Tải, 2=Dịch, 3=TTS, 4=Render"""
@@ -669,13 +942,13 @@ class AppWindow(ctk.CTk):
         for i, pill in enumerate(self.steps, start=1):
             if i < step_idx:
                 # Đã hoàn thành bước trước
-                pill.configure(fg_color="#064E3B", text_color="#34D399")
+                pill.configure(fg_color=APPLE_GREEN_BG, text_color=APPLE_GREEN)
             elif i == step_idx:
                 # Đang xử lý bước hiện tại
-                pill.configure(fg_color="#4F46E5", text_color="#FFFFFF")
+                pill.configure(fg_color=APPLE_BLUE, text_color="#FFFFFF")
             else:
                 # Chưa đến lượt
-                pill.configure(fg_color="#0F172A", text_color="#64748B")
+                pill.configure(fg_color=BG_INSET, text_color=TEXT_MUTED)
 
     def _reset_steps(self):
         self._set_active_step(0)
@@ -692,8 +965,8 @@ class AppWindow(ctk.CTk):
 
         if mode_key == "download_only":
             self.seg_url_mode.configure(
-                selected_color="#059669",
-                selected_hover_color="#047857",
+                selected_color=APPLE_GREEN,
+                selected_hover_color="#248A3D",
             )
             if hasattr(self, "lbl_format_or_quality"):
                 self.lbl_format_or_quality.configure(text="🎬 Độ nét:")
@@ -704,8 +977,8 @@ class AppWindow(ctk.CTk):
                 )
         elif mode_key == "download_audio":
             self.seg_url_mode.configure(
-                selected_color="#D97706",
-                selected_hover_color="#B45309",
+                selected_color=APPLE_ORANGE,
+                selected_hover_color="#CC7A00",
             )
             if hasattr(self, "lbl_format_or_quality"):
                 self.lbl_format_or_quality.configure(text="🎵 Định dạng:")
@@ -716,8 +989,8 @@ class AppWindow(ctk.CTk):
                 )
         else:
             self.seg_url_mode.configure(
-                selected_color="#4F46E5",
-                selected_hover_color="#4338CA",
+                selected_color=APPLE_BLUE,
+                selected_hover_color=APPLE_BLUE_HOVER,
             )
             if hasattr(self, "lbl_format_or_quality"):
                 self.lbl_format_or_quality.configure(text="🎬 Độ nét:")
@@ -756,36 +1029,36 @@ class AppWindow(ctk.CTk):
             if mode == "download_only":
                 self.btn_start.configure(
                     text="⬇️ TẢI VIDEO GỐC",
-                    fg_color="#059669",
-                    hover_color="#047857",
+                    fg_color=APPLE_GREEN,
+                    hover_color="#248A3D",
                 )
                 if hasattr(self, "lbl_url_hint"):
                     self.lbl_url_hint.configure(
                         text="💡 Tải file gốc chất lượng cao nhất về máy (nguyên bản 100%, không chèn sub).",
-                        text_color="#34D399",
+                        text_color=APPLE_GREEN,
                     )
             elif mode == "download_audio":
                 audio_fmt = self.config.get("audio_format", "mp3").upper()
                 self.btn_start.configure(
                     text=f"🎵 TẢI NHẠC / AUDIO ({audio_fmt})",
-                    fg_color="#D97706",
-                    hover_color="#B45309",
+                    fg_color=APPLE_ORANGE,
+                    hover_color="#CC7A00",
                 )
                 if hasattr(self, "lbl_url_hint"):
                     self.lbl_url_hint.configure(
                         text="💡 Chỉ tải riêng bài nhạc/âm thanh chất lượng 320kbps (YouTube, TikTok, SoundCloud, Artlist...).",
-                        text_color="#FBBF24",
+                        text_color=APPLE_ORANGE,
                     )
             else:
                 self.btn_start.configure(
                     text="⚡ TẢI & VIETSUB NGAY",
-                    fg_color="#4F46E5",
-                    hover_color="#4338CA",
+                    fg_color=APPLE_BLUE,
+                    hover_color=APPLE_BLUE_HOVER,
                 )
                 if hasattr(self, "lbl_url_hint"):
                     self.lbl_url_hint.configure(
                         text="💡 Tự động tải video và vietsub luôn. Hệ thống lưu cả 2 file: [Gốc] và [Vietsub]!",
-                        text_color="#818CF8",
+                        text_color=APPLE_CYAN,
                     )
         else:
             source_lang = getattr(self, "source_lang_var", None) and self.source_lang_var.get() or "zh"
@@ -800,8 +1073,8 @@ class AppWindow(ctk.CTk):
 
             self.btn_start.configure(
                 text=btn_text,
-                fg_color="#4F46E5",
-                hover_color="#4338CA",
+                fg_color=APPLE_BLUE,
+                hover_color=APPLE_BLUE_HOVER,
             )
 
     def _on_main_action_clicked(self):
@@ -848,6 +1121,44 @@ class AppWindow(ctk.CTk):
     def _on_tts_toggle(self):
         self._update_step_labels()
 
+    def _on_export_option_change(self):
+        self.config["export_srt"] = self.export_srt_var.get()
+        self.config["export_txt"] = self.export_txt_var.get()
+        save_config(self.config)
+
+    def _on_review_sub_toggle(self):
+        self.config["review_subtitles"] = self.review_subtitles_var.get()
+        save_config(self.config)
+
+    def _open_standalone_editor(self):
+        """Mở Trình Chỉnh Sửa Phụ Đề độc lập để chỉnh sửa SRT và ghép lại video."""
+        try:
+            srt_path = ctk.filedialog.askopenfilename(
+                title="Chọn file Phụ đề (.srt) cần chỉnh sửa",
+                filetypes=[("SRT Subtitles", "*.srt"), ("All Files", "*.*")],
+            )
+            if not srt_path:
+                return
+            with open(srt_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            from utils.config import find_clean_raw_video
+
+            # Tự động tìm file video gốc sạch từ file srt hoặc từ ô nhập video chính
+            clean_video = find_clean_raw_video(srt_path)
+            if not clean_video:
+                curr_input = self.file_path_var.get().strip()
+                clean_video = find_clean_raw_video(curr_input) or (curr_input if os.path.exists(curr_input) else None)
+
+            SubtitleEditorDialog(
+                self,
+                srt_content=content,
+                video_path=clean_video,
+                mode="standalone",
+            )
+        except Exception as e:
+            self._log_msg(f"❌ Lỗi khi mở file phụ đề: {e}")
+
     def _on_main_font_slide(self, val: float):
         int_val = int(round(val))
         self.lbl_font_main.configure(text=f"{int_val} pt")
@@ -860,16 +1171,16 @@ class AppWindow(ctk.CTk):
         if ok:
             self.badge_ffmpeg.configure(
                 text="⚡ FFmpeg: Sẵn sàng",
-                fg_color="#064E3B",
-                hover_color="#047857",
-                text_color="#34D399",
+                fg_color=APPLE_GREEN_BG,
+                hover_color=APPLE_GREEN_BG,
+                text_color=APPLE_GREEN,
             )
         else:
             self.badge_ffmpeg.configure(
                 text="❌ FFmpeg: Thiếu (Bấm tải)",
-                fg_color="#7F1D1D",
-                hover_color="#991B1B",
-                text_color="#FCA5A5",
+                fg_color=APPLE_RED_BG,
+                hover_color=APPLE_RED_BG,
+                text_color=APPLE_RED,
             )
             self._log_msg(f"❌ {msg}")
             self._log_msg("💡 Mẹo: Bấm vào huy hiệu '❌ FFmpeg: Thiếu (Bấm tải)' ở góc trên để tải tự động 1-click!")
@@ -878,11 +1189,15 @@ class AppWindow(ctk.CTk):
         api_key = self.config.get("gemini_api_key", "").strip()
         if api_key:
             self.badge_api.configure(
-                text="🔑 Gemini: Đã kết nối", fg_color="#064E3B", text_color="#34D399"
+                text="🔑 Gemini: Đã kết nối",
+                fg_color=APPLE_GREEN_BG,
+                text_color=APPLE_GREEN,
             )
         else:
             self.badge_api.configure(
-                text="⚠️ Gemini: Chưa có Key", fg_color="#78350F", text_color="#FCD34D"
+                text="⚠️ Gemini: Chưa có Key",
+                fg_color=APPLE_ORANGE_BG,
+                text_color=APPLE_ORANGE,
             )
             self._log_msg("⚠️ Chưa có Gemini API Key. Vui lòng bấm '⚙️ Cài đặt' để nhập key.")
 
@@ -932,6 +1247,12 @@ class AppWindow(ctk.CTk):
             new_fs = new_config.get("subtitle_font_size", 10)
             self.font_slider_main.set(new_fs)
             self.lbl_font_main.configure(text=f"{int(new_fs)} pt")
+            if hasattr(self, "export_srt_var"):
+                self.export_srt_var.set(new_config.get("export_srt", True))
+            if hasattr(self, "export_txt_var"):
+                self.export_txt_var.set(new_config.get("export_txt", True))
+            if hasattr(self, "review_subtitles_var"):
+                self.review_subtitles_var.set(new_config.get("review_subtitles", False))
 
         SettingsDialog(self, self.config, on_save)
 
@@ -971,29 +1292,49 @@ class AppWindow(ctk.CTk):
             self.seg_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "chk_review_sub"):
+                self.chk_review_sub.configure(state="disabled")
+            if hasattr(self, "chk_export_srt"):
+                self.chk_export_srt.configure(state="disabled")
+            if hasattr(self, "chk_export_txt"):
+                self.chk_export_txt.configure(state="disabled")
+            if hasattr(self, "btn_editor"):
+                self.btn_editor.configure(state="disabled")
         except Exception:
             pass
 
-        self.log_box.delete("1.0", "end")
-        self.progress_bar.set(0.0)
-        self.pct_badge.configure(text="0%")
-        self.status_label.configure(text="⏳ Đang khởi động quy trình...")
-        self._set_active_step(1 if is_url else 2)
+        try:
+            self.log_box.delete("1.0", "end")
+            self.progress_bar.set(0.0)
+            self.pct_badge.configure(text="0%")
+            self._start_timer()
+            self.status_label.configure(text="⏳ Đang khởi động quy trình...")
+            self._set_active_step(1 if is_url else 2)
 
-        # Cập nhật cấu hình hiện tại và lưu lại
-        self.config["source_language"] = self.source_lang_var.get()
-        self.config["enable_tts"] = self.enable_tts_var.get()
-        self.config["download_quality"] = self.reverse_quality_map.get(self.download_quality_var.get(), "best")
-        save_config(self.config)
+            # Cập nhật cấu hình hiện tại và lưu lại
+            self.config["source_language"] = self.source_lang_var.get()
+            self.config["enable_tts"] = self.enable_tts_var.get()
+            self.config["download_quality"] = self.reverse_quality_map.get(self.download_quality_var.get(), "best")
+            self.config["export_srt"] = self.export_srt_var.get()
+            self.config["export_txt"] = self.export_txt_var.get()
+            self.config["review_subtitles"] = self.review_subtitles_var.get()
+            save_config(self.config)
 
-        # Chạy pipeline trên thread riêng
-        self.pipeline = Pipeline(self.task_queue)
-        thread = threading.Thread(
-            target=self.pipeline.run,
-            args=(self.config, source, is_url),
-            daemon=True,
-        )
-        thread.start()
+            # Chạy pipeline trên thread riêng
+            self.pipeline = Pipeline(self.task_queue)
+            thread = threading.Thread(
+                target=self.pipeline.run,
+                args=(self.config, source, is_url),
+                daemon=True,
+            )
+            thread.start()
+        except Exception as e:
+            self._is_processing = False
+            self._stop_timer(success=False)
+            self.btn_start.configure(state="normal")
+            self.btn_cancel.configure(state="disabled")
+            self.status_label.configure(text="❌ Lỗi khởi động")
+            self._log_msg(f"❌ Không thể khởi động tiến trình: {e}")
 
     def _start_download_only(self):
         url = self.url_var.get().strip()
@@ -1017,12 +1358,17 @@ class AppWindow(ctk.CTk):
             self.seg_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "chk_export_srt"):
+                self.chk_export_srt.configure(state="disabled")
+            if hasattr(self, "chk_export_txt"):
+                self.chk_export_txt.configure(state="disabled")
         except Exception:
             pass
 
         self.log_box.delete("1.0", "end")
         self.progress_bar.set(0.0)
         self.pct_badge.configure(text="0%")
+        self._start_timer()
         self.status_label.configure(text="⏳ Đang kết nối tới máy chủ video...")
         self._set_active_step(1)
 
@@ -1078,6 +1424,10 @@ class AppWindow(ctk.CTk):
             self.seg_lang.configure(state="disabled")
             self.switch_tts.configure(state="disabled")
             self.font_slider_main.configure(state="disabled")
+            if hasattr(self, "chk_export_srt"):
+                self.chk_export_srt.configure(state="disabled")
+            if hasattr(self, "chk_export_txt"):
+                self.chk_export_txt.configure(state="disabled")
             if hasattr(self, "btn_extract_audio"):
                 self.btn_extract_audio.configure(state="disabled")
         except Exception:
@@ -1086,6 +1436,7 @@ class AppWindow(ctk.CTk):
         self.log_box.delete("1.0", "end")
         self.progress_bar.set(0.0)
         self.pct_badge.configure(text="0%")
+        self._start_timer()
         self.status_label.configure(text="⏳ Đang kết nối tải bài nhạc...")
         self._set_active_step(1)
 
@@ -1146,6 +1497,7 @@ class AppWindow(ctk.CTk):
         self.log_box.delete("1.0", "end")
         self.progress_bar.set(0.1)
         self.pct_badge.configure(text="10%")
+        self._start_timer()
         self.status_label.configure(text="⏳ Đang bóc tách âm thanh sang MP3 320kbps...")
         self._set_active_step(1)
 
@@ -1180,6 +1532,7 @@ class AppWindow(ctk.CTk):
             self.status_label.configure(text="⚠️ Đang gửi yêu cầu hủy...")
             self.btn_cancel.configure(state="disabled")
             self._download_cancelled = True
+            self._stop_timer(success=False)
             if self.pipeline:
                 self.pipeline.cancel()
 
@@ -1210,6 +1563,32 @@ class AppWindow(ctk.CTk):
                     self.progress_bar.set(val)
                     self.pct_badge.configure(text=f"{int(val * 100)}%")
                     self.status_label.configure(text=lbl)
+
+                elif msg_type == "review_subtitles":
+                    segments = msg.get("segments", [])
+                    srt_content = msg.get("srt_content", "")
+                    video_path = msg.get("video_path", "")
+                    ev = msg["event"]
+                    holder = msg["holder"]
+
+                    def _on_review_confirmed(updated_segments):
+                        holder["segments"] = updated_segments
+                        holder["cancelled"] = False
+                        ev.set()
+
+                    def _on_review_cancelled():
+                        holder["cancelled"] = True
+                        ev.set()
+
+                    SubtitleEditorDialog(
+                        self,
+                        segments=segments,
+                        srt_content=srt_content,
+                        video_path=video_path,
+                        mode="review",
+                        on_confirm=_on_review_confirmed,
+                        on_cancel=_on_review_cancelled,
+                    )
 
                 elif msg_type == "success":
                     self._set_active_step(5)  # All done
@@ -1246,6 +1625,8 @@ class AppWindow(ctk.CTk):
 
                 elif msg_type == "download_done" or msg_type == "done":
                     self._is_processing = False
+                    elapsed_str = self._stop_timer(success=True)
+                    self._log_msg(f"⏱️ Tổng thời gian thực hiện: {elapsed_str}")
                     self.btn_start.configure(state="normal")
                     self.btn_cancel.configure(state="disabled")
                     try:
@@ -1255,6 +1636,14 @@ class AppWindow(ctk.CTk):
                         self.seg_lang.configure(state="normal")
                         self.switch_tts.configure(state="normal")
                         self.font_slider_main.configure(state="normal")
+                        if hasattr(self, "chk_review_sub"):
+                            self.chk_review_sub.configure(state="normal")
+                        if hasattr(self, "chk_export_srt"):
+                            self.chk_export_srt.configure(state="normal")
+                        if hasattr(self, "chk_export_txt"):
+                            self.chk_export_txt.configure(state="normal")
+                        if hasattr(self, "btn_editor"):
+                            self.btn_editor.configure(state="normal")
                         if hasattr(self, "btn_extract_audio"):
                             self.btn_extract_audio.configure(state="normal")
                     except Exception:
@@ -1263,5 +1652,7 @@ class AppWindow(ctk.CTk):
 
         except queue.Empty:
             pass
-
-        self.after(100, self._process_queue)
+        except Exception as e:
+            print(f"Error in _process_queue: {e}")
+        finally:
+            self.after(100, self._process_queue)
