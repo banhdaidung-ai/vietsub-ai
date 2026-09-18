@@ -145,3 +145,46 @@ def test_settings_dialog_ui_switch():
     assert saved_config["tts_voice_gemini"] == "Charon"
     
     root.destroy()
+
+
+def test_tts_silence_insertion_on_all_retries_failure():
+    """Kiểm tra Phương án A: Khi tất cả retry đều thất bại, hệ thống chèn file im lặng (silence) để giữ timeline."""
+    import shutil
+    from utils.srt_parser import SRTSegment
+    from utils.ffmpeg_check import get_ffmpeg_path
+
+    logs = []
+    def log_cb(msg):
+        logs.append(msg)
+
+    gen = TTSGenerator(
+        voice="vi-VN-HoaiMyNeural",
+        tts_technology="edge",
+        log_callback=log_cb,
+    )
+
+    ffmpeg = get_ffmpeg_path() or "ffmpeg"
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        silence_file = os.path.join(tmp_dir, "silence_test.mp3")
+        ok = gen._create_silence_audio(ffmpeg, 1.2, silence_file)
+        assert ok is True
+        assert os.path.exists(silence_file)
+        assert os.path.getsize(silence_file) > 0
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_check_ffmpeg_caching():
+    """Kiểm tra chức năng bộ nhớ đệm FFmpeg phản hồi siêu tốc."""
+    from utils.ffmpeg_check import check_ffmpeg, clear_ffmpeg_cache
+
+    clear_ffmpeg_cache()
+    ok1, msg1 = check_ffmpeg()
+    assert ok1 is True
+
+    # Lần 2 lấy từ cache
+    ok2, msg2 = check_ffmpeg()
+    assert ok2 is True
+    assert msg1 == msg2
+

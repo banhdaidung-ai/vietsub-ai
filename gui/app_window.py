@@ -15,8 +15,10 @@ from typing import Optional
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-from core.audio_separator import check_demucs_installed, separate_audio_stems
-from core.pipeline import Pipeline
+# NOTE: core modules (Pipeline, audio_separator, douyin) are lazy-imported
+# inside the methods that need them to avoid blocking UI startup on Windows.
+# Heavy packages like google-genai, yt_dlp, edge_tts, curl_cffi take 2-5s
+# to load from PyInstaller frozen bundles.
 from gui.ffmpeg_download_dialog import FFmpegDownloadDialog
 from gui.settings_dialog import SettingsDialog
 from gui.completion_dialog import CompletionDialog, _fmt_size
@@ -84,7 +86,7 @@ class AppWindow(ctk.CTk):
 
         self.config = load_config()
         self.task_queue = queue.Queue()
-        self.pipeline: Optional[Pipeline] = None
+        self.pipeline = None
         self._is_processing = False
         self._download_cancelled = False
         self._audio_sep_cancel_event = threading.Event()
@@ -98,9 +100,11 @@ class AppWindow(ctk.CTk):
 
         self._set_app_icon()
         self._build_ui()
-        self._check_prerequisites()
         self._update_step_labels()
         self._update_action_button()
+
+        # Chạy kiểm tra FFmpeg & API Key trên background thread để không block UI khởi động
+        threading.Thread(target=self._check_prerequisites_async, daemon=True).start()
 
         # Polling queue định kỳ (100ms) để cập nhật UI từ background thread
         self.after(100, self._process_queue)
@@ -1396,10 +1400,16 @@ class AppWindow(ctk.CTk):
         self._update_style_preview(preset)
         self._log_msg(f"🎨 Đã chọn mẫu phụ đề: {preset['name']}")
 
-    def _check_prerequisites(self):
-        """Kiểm tra FFmpeg và API Key khi khởi động và cập nhật Badges."""
+    def _check_prerequisites_async(self):
+        """Chạy trên background thread: kiểm tra FFmpeg và API Key rồi cập nhật Badges trên main thread."""
         ok, msg = check_ffmpeg()
-        if ok:
+        api_key = self.config.get("gemini_api_key", "")
+        # Cập nhật UI phải chạy trên main thread
+        self.after(0, lambda: self._apply_prerequisites_result(ok, msg, api_key))
+
+    def _apply_prerequisites_result(self, ffmpeg_ok: bool, ffmpeg_msg: str, api_key: str):
+        """Áp dụng kết quả kiểm tra prerequisites lên UI (chạy trên main thread)."""
+        if ffmpeg_ok:
             self.badge_ffmpeg.configure(
                 text="⚡ FFmpeg: Sẵn sàng",
                 fg_color=APPLE_GREEN_BG,
@@ -1417,13 +1427,14 @@ class AppWindow(ctk.CTk):
             self._log_msg("💡 Mẹo: Bấm vào huy hiệu '❌ FFmpeg: Thiếu (Bấm tải)' ở góc trên để tải tự động 1-click!")
             self.btn_start.configure(state="disabled")
 
-        api_key = self.config.get("gemini_api_key", "").strip()
         if api_key:
             self.badge_api.configure(
                 text="🔑 Gemini: Đã kết nối",
                 fg_color=APPLE_GREEN_BG,
                 text_color=APPLE_GREEN,
             )
+            if ffmpeg_ok:
+                self.btn_start.configure(state="normal")
         else:
             self.badge_api.configure(
                 text="⚠️ Gemini: Chưa có Key",
@@ -1431,6 +1442,11 @@ class AppWindow(ctk.CTk):
                 text_color=APPLE_ORANGE,
             )
             self._log_msg("⚠️ Chưa có Gemini API Key. Vui lòng bấm '⚙️ Cài đặt' để nhập key.")
+
+    def _check_prerequisites(self):
+        """Kiểm tra đồng bộ FFmpeg và API Key (được gọi từ callback sau khi lưu settings)."""
+        ok, msg = check_ffmpeg()
+        self._apply_prerequisites_result(ok, msg, self.config.get("gemini_api_key", "").strip())
 
     def _on_ffmpeg_badge_click(self):
         ok, msg = check_ffmpeg()
@@ -1579,7 +1595,8 @@ class AppWindow(ctk.CTk):
             self.config["review_subtitles"] = self.review_subtitles_var.get()
             save_config(self.config)
 
-            # Chạy pipeline trên thread riêng
+            # Chạy pipeline trên thread riêng (lazy-import để tăng tốc khởi động ứng dụng)
+            from core.pipeline import Pipeline
             self.pipeline = Pipeline(self.task_queue)
             thread = threading.Thread(
                 target=self.pipeline.run,
@@ -1762,6 +1779,7 @@ class AppWindow(ctk.CTk):
             self._log_msg("❌ Lỗi: Vui lòng chọn một file video hoặc bài nhạc ở Tab 1 trước khi bấm tách.")
             return
 
+        from core.audio_separator import check_demucs_installed
         ok, msg = check_demucs_installed()
         if not ok:
             self._log_msg(f"❌ {msg}")
@@ -1821,6 +1839,7 @@ class AppWindow(ctk.CTk):
                 def on_prog(pct, label):
                     self.task_queue.put({"type": "progress", "value": pct, "label": label})
 
+                from core.audio_separator import separate_audio_stems
                 results = separate_audio_stems(
                     input_path=video_path,
                     output_dir=out_dir,
@@ -1863,6 +1882,7 @@ class AppWindow(ctk.CTk):
             self._log_msg(f"❌ {msg}")
             return
 
+        from core.audio_separator import check_demucs_installed
         ok_demucs, msg_demucs = check_demucs_installed()
         if not ok_demucs:
             self._log_msg(f"❌ {msg_demucs}")
@@ -1923,6 +1943,7 @@ class AppWindow(ctk.CTk):
                     mapped = 0.30 + pct * 0.70
                     self.task_queue.put({"type": "progress", "value": mapped, "label": f"[2/2] {label}"})
 
+                from core.audio_separator import separate_audio_stems
                 results = separate_audio_stems(
                     input_path=dl_file,
                     output_dir=out_dir,

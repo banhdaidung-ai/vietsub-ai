@@ -258,6 +258,7 @@ class Pipeline:
                 api_key=config.get("gemini_api_key", ""),
                 progress_callback=self._make_progress_cb(0.50, 0.75),
                 is_cancelled=lambda: self._cancelled,
+                log_callback=self._log,
             )
             tts.generate_track(segments, total_duration, tts_audio)
             self._log("✅ Tạo giọng đọc xong")

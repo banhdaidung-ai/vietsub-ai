@@ -70,8 +70,24 @@ def get_app_bin_dir() -> Path:
     return app_dir
 
 
-def _resolve_binary(name: str) -> Optional[str]:
-    """Tìm kiếm file thực thi (ffmpeg/ffprobe) trên toàn bộ hệ thống."""
+_RESOLVED_BINARIES = {}
+_CHECKED_FFMPEG = None
+
+
+def clear_ffmpeg_cache():
+    """Xóa bộ nhớ đệm FFmpeg để quét lại từ đầu (sau khi tải mới hoặc cài đặt)."""
+    global _CHECKED_FFMPEG
+    _RESOLVED_BINARIES.clear()
+    _CHECKED_FFMPEG = None
+
+
+def _resolve_binary(name: str, force: bool = False) -> Optional[str]:
+    """Tìm kiếm file thực thi (ffmpeg/ffprobe) trên toàn bộ hệ thống (có bộ nhớ đệm)."""
+    if not force and name in _RESOLVED_BINARIES:
+        cached = _RESOLVED_BINARIES[name]
+        if cached and os.path.isfile(cached):
+            return cached
+
     exts = [".exe", ""] if os.name == "nt" else [""]
 
     # 0. Kiểm tra trong bundle PyInstaller hoặc bên cạnh file thực thi
@@ -190,10 +206,13 @@ def _resolve_binary(name: str) -> Optional[str]:
         if os.name == "nt" and not bin_path.lower().endswith(".exe"):
             bin_path_exe = f"{bin_path}.exe"
             if os.path.isfile(bin_path_exe):
+                _RESOLVED_BINARIES[name] = bin_path_exe
                 return bin_path_exe
         if os.path.isfile(bin_path) and (os.name == "nt" or os.access(bin_path, os.X_OK)):
+            _RESOLVED_BINARIES[name] = bin_path
             return bin_path
 
+    _RESOLVED_BINARIES[name] = None
     return None
 
 
@@ -205,6 +224,7 @@ def download_ffmpeg_binaries(
     progress_callback(fraction, downloaded_bytes, total_bytes, message)
     Returns: (thành_công, thông_báo)
     """
+    clear_ffmpeg_cache()
     platform_key = get_platform_key()
     url = FFMPEG_DOWNLOAD_URLS.get(platform_key)
     if not url:
@@ -271,7 +291,8 @@ def download_ffmpeg_binaries(
                 pass
 
         _report(0.98, total_bytes, total_bytes, "Đang kiểm tra khởi động FFmpeg...")
-        ok, msg = check_ffmpeg()
+        clear_ffmpeg_cache()
+        ok, msg = check_ffmpeg(force=True)
         if ok:
             _report(1.0, total_bytes, total_bytes, "Cài đặt FFmpeg thành công!")
             return True, "Cài đặt FFmpeg thành công và sẵn sàng sử dụng!"
@@ -296,20 +317,29 @@ def get_ffprobe_path() -> Optional[str]:
     return _resolve_binary("ffprobe")
 
 
-def check_ffmpeg() -> Tuple[bool, str]:
+def check_ffmpeg(force: bool = False) -> Tuple[bool, str]:
     """
-    Kiểm tra FFmpeg đã cài đặt và hoạt động.
+    Kiểm tra FFmpeg đã cài đặt và hoạt động (có bộ nhớ đệm để phản hồi tức thì 0ms).
     Returns: (thành_công, thông_báo)
     """
+    global _CHECKED_FFMPEG
+    if not force and _CHECKED_FFMPEG is not None and _CHECKED_FFMPEG[0]:
+        return _CHECKED_FFMPEG
+
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
-        return False, (
-            "FFmpeg không tìm thấy trên hệ thống.\n\n"
-            "Cài đặt:\n"
-            "  Windows: Bấm '⚡ Tải FFmpeg' ở góc phải hoặc chạy 'winget install ffmpeg'\n"
-            "  Mac:     brew install ffmpeg\n"
-            "  Linux:   sudo apt install ffmpeg"
+        res = (
+            False,
+            (
+                "FFmpeg không tìm thấy trên hệ thống.\n\n"
+                "Cài đặt:\n"
+                "  Windows: Bấm '⚡ Tải FFmpeg' ở góc phải hoặc chạy 'winget install ffmpeg'\n"
+                "  Mac:     brew install ffmpeg\n"
+                "  Linux:   sudo apt install ffmpeg"
+            ),
         )
+        _CHECKED_FFMPEG = res
+        return res
 
     try:
         result = subprocess.run(
@@ -320,10 +350,16 @@ def check_ffmpeg() -> Tuple[bool, str]:
         )
         if result.returncode == 0:
             version_line = result.stdout.split("\n")[0]
-            return True, f"FFmpeg OK: {version_line}"
-        return False, "FFmpeg lỗi khi chạy."
+            res = (True, f"FFmpeg OK: {version_line}")
+            _CHECKED_FFMPEG = res
+            return res
+        res = (False, "FFmpeg lỗi khi chạy.")
+        _CHECKED_FFMPEG = res
+        return res
     except Exception as e:
-        return False, f"FFmpeg lỗi: {e}"
+        res = (False, f"FFmpeg lỗi: {e}")
+        _CHECKED_FFMPEG = res
+        return res
 
 
 def get_video_duration(video_path: str) -> float:
