@@ -163,6 +163,12 @@ class Pipeline:
             f.write(srt_content)
 
         segments = parse_srt(srt_content)
+        if not segments:
+            raise ValueError(
+                f"Không nhận diện được đoạn hội thoại/lời thoại nào trong video. "
+                "Vui lòng kiểm tra lại xem video có chứa âm thanh giọng nói rõ ràng hay không."
+            )
+
         if source_lang == "vi" and target_lang == "vi":
             self._log(f"✅ Phiên âm xong: {len(segments)} đoạn phụ đề tiếng Việt")
             self._progress(0.50, "Phiên âm xong")

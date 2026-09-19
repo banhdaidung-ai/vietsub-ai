@@ -189,10 +189,19 @@ class TTSGenerator:
                 current_rate = "+0%"
                 current_pitch = "+0Hz"
 
+            # Nếu thử lại đến lần 5 mà vẫn lỗi (do server Microsoft chặn giọng đó trên cụm từ đó),
+            # tự động đảo sang giọng dự phòng để không bao giờ bị mất câu
+            current_voice = voice_name
+            if attempt >= 5:
+                if "HoaiMy" in voice_name:
+                    current_voice = "vi-VN-NamMinhNeural"
+                elif "NamMinh" in voice_name:
+                    current_voice = "vi-VN-HoaiMyNeural"
+
             try:
                 communicate = edge_tts.Communicate(
                     text=current_text,
-                    voice=voice_name,
+                    voice=current_voice,
                     rate=current_rate,
                     pitch=current_pitch,
                     connect_timeout=12,
@@ -201,7 +210,7 @@ class TTSGenerator:
                 await communicate.save(out_path)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
                     if attempt > 1:
-                        self._log(f"   ✅ Đã tạo thành công giọng {voice_name} ở lần thử thứ {attempt}!")
+                        self._log(f"   ✅ Đã tạo thành công giọng {current_voice} ở lần thử thứ {attempt}!")
                     return True
             except (InterruptedError, KeyboardInterrupt):
                 raise
@@ -451,8 +460,8 @@ class TTSGenerator:
                         tts_success_count += 1
                         seg_paths.append((seg, seg_path))
 
-                    # Nghỉ 350ms giữa các câu để chống Microsoft WebSocket connection reset/rate limit
-                    await asyncio.sleep(0.35)
+                    # Nghỉ 650ms giữa các câu để chống Microsoft WebSocket connection reset/rate limit
+                    await asyncio.sleep(0.65)
 
             # Điều chỉnh tốc độ thông minh & Bảo toàn tone giọng phát thanh viên (Tempo Smoothing)
             adjusted_seg_paths = []

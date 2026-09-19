@@ -532,6 +532,8 @@ class GeminiProcessor:
                     "  • Video quá ngắn (< 1 giây)"
                 )
 
+            return srt_content
+
         finally:
             if video_file:
                 try:
