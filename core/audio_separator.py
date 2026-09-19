@@ -17,36 +17,13 @@ from utils.ffmpeg_check import get_ffmpeg_path
 
 
 def check_demucs_installed() -> Tuple[bool, str]:
-    """Kiểm tra xem thư viện demucs đã sẵn sàng chưa (qua module Python hoặc CLI hệ thống)."""
-    # 1. Kiểm tra import trực tiếp nếu chạy từ mã nguồn / môi trường ảo
+    """Kiểm tra xem thư viện demucs và torch đã sẵn sàng chưa."""
     try:
         import torch  # noqa: F401
         import demucs  # noqa: F401
         return True, "Demucs AI sẵn sàng."
-    except ImportError:
-        pass
-
-    # 2. Kiểm tra lệnh demucs CLI có sẵn trên hệ điều hành không
-    if shutil.which("demucs"):
-        return True, "Demucs AI CLI sẵn sàng."
-
-    # 3. Kiểm tra Python hệ thống có cài demucs không
-    for py_cmd in ["python3", "python"]:
-        py_path = shutil.which(py_cmd)
-        if py_path:
-            try:
-                res = subprocess.run(
-                    [py_path, "-c", "import demucs, torch"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    timeout=3,
-                )
-                if res.returncode == 0:
-                    return True, f"Demucs AI sẵn sàng qua {py_cmd} hệ thống."
-            except Exception:
-                pass
-
-    return False, "Chưa cài đặt thư viện Demucs AI. Vui lòng cài đặt: pip install demucs"
+    except ImportError as e:
+        return False, f"Chưa cài đặt thư viện Demucs AI: {e}"
 
 
 def get_optimal_device() -> str:
@@ -140,26 +117,11 @@ def separate_audio_stems(
         if cancel_event and cancel_event.is_set():
             raise RuntimeError("Người dùng đã hủy tác vụ.")
 
-        # Bước 2: Chuẩn bị lệnh Demucs CLI
+        # Bước 2: Tách âm thanh bằng Demucs AI
         demucs_out_dir = os.path.join(temp_work_dir, "separated")
         os.makedirs(demucs_out_dir, exist_ok=True)
 
-        is_frozen = getattr(sys, "frozen", False)
-        demucs_cli = shutil.which("demucs")
-
-        if is_frozen:
-            if demucs_cli:
-                cmd_demucs = [demucs_cli]
-            else:
-                py_bin = shutil.which("python3") or shutil.which("python") or "python"
-                cmd_demucs = [py_bin, "-m", "demucs"]
-        else:
-            if demucs_cli and not os.path.exists(sys.executable):
-                cmd_demucs = [demucs_cli]
-            else:
-                cmd_demucs = [sys.executable, "-m", "demucs"]
-
-        cmd_demucs += [
+        demucs_opts = [
             "--two-stems=vocals",
             "-n", "htdemucs",
             "-o", demucs_out_dir,
@@ -167,73 +129,99 @@ def separate_audio_stems(
         ]
 
         if fmt == "mp3":
-            cmd_demucs += ["--mp3", "--mp3-bitrate", bitrate.replace("k", "")]
+            demucs_opts += ["--mp3", "--mp3-bitrate", bitrate.replace("k", "")]
 
-        cmd_demucs.append(audio_input_path)
+        demucs_opts.append(audio_input_path)
 
         if progress_callback:
             progress_callback(0.20, "Đang nạp mô hình AI Demucs v4...")
 
-        # Chạy Demucs với khả năng hủy và đọc tiến trình
-        proc = subprocess.Popen(
-            cmd_demucs,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-        )
-
-        pct_regex = re.compile(r"(\d+)%")
-        last_pct = 0.20
-
-        while True:
-            if cancel_event and cancel_event.is_set():
-                proc.terminate()
-                try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                raise RuntimeError("Người dùng đã hủy tác vụ tách âm thanh.")
-
-            line = proc.stdout.readline()
-            if not line and proc.poll() is not None:
-                break
-
-            if line:
-                line_str = line.strip()
-                # Bắt phần trăm tiến trình từ thanh tiến độ của Demucs / tqdm
-                match = pct_regex.search(line_str)
-                if match:
-                    val = int(match.group(1))
-                    # Map từ 0%..100% của Demucs sang 0.25..0.90 của toàn bộ tác vụ
-                    mapped_pct = 0.25 + (val / 100.0) * 0.65
-                    if mapped_pct > last_pct:
-                        last_pct = mapped_pct
+        is_frozen = getattr(sys, "frozen", False)
+        if is_frozen:
+            import demucs.separate
+            try:
+                demucs.separate.main(demucs_opts)
+            except SystemExit as se:
+                if se.code not in (0, None):
+                    if device == "mps":
                         if progress_callback:
-                            progress_callback(
-                                mapped_pct,
-                                f"Đang tách âm thanh bằng AI: {val}%..."
-                            )
+                            progress_callback(0.25, "MPS không hỗ trợ toán tử này, đang chuyển sang CPU...")
+                        return separate_audio_stems(
+                            input_path=input_path,
+                            output_dir=output_dir,
+                            mode=mode,
+                            audio_format=audio_format,
+                            bitrate=bitrate,
+                            device="cpu",
+                            progress_callback=progress_callback,
+                            cancel_event=cancel_event,
+                        )
+                    raise RuntimeError(f"Demucs AI gặp lỗi (mã thoát: {se.code}).")
+            if progress_callback:
+                progress_callback(0.90, "Đã hoàn tất tách âm thanh bằng Demucs AI.")
+        else:
+            cmd_demucs = [sys.executable, "-m", "demucs"] + demucs_opts
 
-        ret_code = proc.wait()
-        if ret_code != 0:
-            # Nếu chạy bằng MPS bị lỗi (ví dụ một số hàm MPS chưa hỗ trợ), thử fallback về CPU
-            if device == "mps":
-                if progress_callback:
-                    progress_callback(0.25, "MPS không hỗ trợ toán tử này, đang chuyển sang CPU...")
-                return separate_audio_stems(
-                    input_path=input_path,
-                    output_dir=output_dir,
-                    mode=mode,
-                    audio_format=audio_format,
-                    bitrate=bitrate,
-                    device="cpu",
-                    progress_callback=progress_callback,
-                    cancel_event=cancel_event,
-                )
-            raise RuntimeError(f"Demucs AI gặp lỗi (mã thoát: {ret_code}).")
+            # Chạy Demucs với khả năng hủy và đọc tiến trình
+            proc = subprocess.Popen(
+                cmd_demucs,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+
+            pct_regex = re.compile(r"(\d+)%")
+            last_pct = 0.20
+
+            while True:
+                if cancel_event and cancel_event.is_set():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    raise RuntimeError("Người dùng đã hủy tác vụ tách âm thanh.")
+
+                line = proc.stdout.readline()
+                if not line and proc.poll() is not None:
+                    break
+
+                if line:
+                    line_str = line.strip()
+                    # Bắt phần trăm tiến trình từ thanh tiến độ của Demucs / tqdm
+                    match = pct_regex.search(line_str)
+                    if match:
+                        val = int(match.group(1))
+                        # Map từ 0%..100% của Demucs sang 0.25..0.90 của toàn bộ tác vụ
+                        mapped_pct = 0.25 + (val / 100.0) * 0.65
+                        if mapped_pct > last_pct:
+                            last_pct = mapped_pct
+                            if progress_callback:
+                                progress_callback(
+                                    mapped_pct,
+                                    f"Đang tách âm thanh bằng AI: {val}%...",
+                                )
+
+            ret_code = proc.wait()
+            if ret_code != 0:
+                # Nếu chạy bằng MPS bị lỗi (ví dụ một số hàm MPS chưa hỗ trợ), thử fallback về CPU
+                if device == "mps":
+                    if progress_callback:
+                        progress_callback(0.25, "MPS không hỗ trợ toán tử này, đang chuyển sang CPU...")
+                    return separate_audio_stems(
+                        input_path=input_path,
+                        output_dir=output_dir,
+                        mode=mode,
+                        audio_format=audio_format,
+                        bitrate=bitrate,
+                        device="cpu",
+                        progress_callback=progress_callback,
+                        cancel_event=cancel_event,
+                    )
+                raise RuntimeError(f"Demucs AI gặp lỗi (mã thoát: {ret_code}).")
 
         if cancel_event and cancel_event.is_set():
             raise RuntimeError("Người dùng đã hủy tác vụ.")

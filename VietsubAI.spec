@@ -17,7 +17,7 @@ hiddenimports = [
     'pydantic.deprecated.decorator',
 ]
 
-for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2']:
+for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs']:
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
@@ -25,7 +25,7 @@ for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 
 
 # Lọc bỏ các module test và file rác của thư viện để giảm dung lượng
 hiddenimports = [h for h in set(hiddenimports) if not any(t in h for t in ['.tests', '.test_', 'testing', 'tests'])]
-datas = [d for d in datas if not any(t in str(d[0]).replace('\\', '/') for t in ['/tests/', '/test/', '/testing/'])]
+datas = [d for d in datas if not any(t in str(d[0]).replace('\\', '/') for t in ['/tests/', '/test/', '/testing/', '/include/'])]
 
 # Thêm thư mục assets (chứa icon, hình ảnh)
 if os.path.exists('assets'):
@@ -58,11 +58,9 @@ a = Analysis(
     excludes=[
         'tkinter.test', 'unittest', 'test', 'tests',
         'email.test', 'xmlrpc', 'pydoc', 'sqlite3',
-        'matplotlib', 'scipy', 'numpy', 'pandas',
+        'matplotlib', 'scipy', 'pandas',
         'static_ffmpeg',
-        'torch', 'torchaudio', 'torchvision', 'demucs',
-        'sympy', 'networkx', 'safetensors', 'einops',
-        'julius', 'lameenc', 'setuptools',
+        'sympy', 'setuptools',
         'pip', 'wheel', 'IPython', 'jupyter',
     ],
     win_no_prefer_redirects=False,
