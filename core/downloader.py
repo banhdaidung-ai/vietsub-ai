@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -145,6 +146,31 @@ class VideoDownloader:
 
         return self._downloaded_path
 
+    @staticmethod
+    def _clean_artlist_stream_title(audio_url: str, current_title: str = "Artlist_Track") -> str:
+        """Trích xuất tên bài hát thân thiện từ URL stream của Artlist (thường là đường dẫn mã hoá base64)."""
+        try:
+            parsed = urllib.parse.urlparse(audio_url)
+            path_part = parsed.path.strip("/")
+            if "cms-public-artifacts.artlist.io" in audio_url and path_part:
+                b64_candidate = path_part.split("/")[-1]
+                pad = len(b64_candidate) % 4
+                if pad:
+                    b64_candidate += "=" * (4 - pad)
+                decoded = base64.b64decode(b64_candidate).decode("utf-8", errors="ignore")
+                if "/" in decoded or "." in decoded:
+                    stem = Path(decoded).stem
+                    parts = stem.split("_-_")
+                    if len(parts) >= 2:
+                        res = parts[1].replace("_", " ").strip()
+                        return re.sub(r"(?i)[_ ]*(?:aac|mp3|wav|m4a)$", "", res).strip() or current_title
+                    clean_stem = re.sub(r"^\d+(?:_\d+)*_", "", stem)
+                    res = clean_stem.replace("_", " ").strip() or stem
+                    return re.sub(r"(?i)[_ ]*(?:aac|mp3|wav|m4a)$", "", res).strip() or current_title
+        except Exception:
+            pass
+        return current_title
+
     def _download_direct_stream(
         self,
         audio_url: str,
@@ -157,6 +183,9 @@ class VideoDownloader:
         from curl_cffi import requests
 
         clean_title = re.sub(r'[\\/*?:"<>|]', "", title).strip() or "audio_track"
+        if "artlist.io" in audio_url.lower() and (not clean_title or clean_title in ("audio_download", "Artlist_Track") or len(clean_title) > 35):
+            clean_title = self._clean_artlist_stream_title(audio_url, clean_title)
+
         target_ext = audio_format.lower().strip(".")
         if target_ext not in ("mp3", "m4a", "wav"):
             target_ext = "mp3"
@@ -171,13 +200,20 @@ class VideoDownloader:
 
         self._report(0.1, f"Đang kết nối tới luồng âm thanh ({clean_title})...")
 
+        # Cấu hình Referer phù hợp theo từng CDN để tránh bị chặn HTTP 403 (đặc biệt là Artlist)
+        referer = "https://www.google.com/"
+        if "artlist.io" in audio_url.lower():
+            referer = "https://artlist.io/"
+        elif "epidemicsound.com" in audio_url.lower():
+            referer = "https://www.epidemicsound.com/"
+
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/128.0.0.0 Safari/537.36"
             ),
-            "Referer": "https://www.google.com/",
+            "Referer": referer,
         }
 
         r = requests.get(audio_url, stream=True, impersonate="chrome", headers=headers, timeout=20)
@@ -188,7 +224,7 @@ class VideoDownloader:
         downloaded = 0
 
         with open(tmp_file, "wb") as f:
-            for chunk in r.iter_content(chunk_size=65536):
+            for chunk in r.iter_content():
                 if self.is_cancelled and self.is_cancelled():
                     try:
                         tmp_file.unlink()
@@ -307,6 +343,51 @@ class VideoDownloader:
             from curl_cffi import requests
 
             self._report(0.05, "Đang kết nối tới Artlist qua kết nối an toàn...")
+
+            # 2.1: Thử lấy dữ liệu bài hát từ Artlist GraphQL API nếu URL có chứa ID
+            m_id = re.search(r"/(?:song|track|sfx)/.*?(\d+)(?:[/?#]|$)", url_clean) or re.search(r"/(\d+)(?:[/?#]|$)", url_clean)
+            if m_id:
+                song_id = m_id.group(1)
+                gql_query = """query Songs($ids: [String!]!) {
+  songs(ids: $ids) {
+    songId
+    songName
+    artistName
+    sitePlayableFilePath
+  }
+}"""
+                try:
+                    r_gql = requests.post(
+                        "https://search-api.artlist.io/v1/graphql",
+                        json={"query": gql_query, "variables": {"ids": [song_id]}},
+                        headers={
+                            "content-type": "application/json",
+                            "referer": "https://artlist.io/",
+                        },
+                        impersonate="chrome",
+                        timeout=10,
+                    )
+                    if r_gql.status_code == 200:
+                        data = r_gql.json()
+                        songs = data.get("data", {}).get("songs", [])
+                        if songs and songs[0].get("sitePlayableFilePath"):
+                            s = songs[0]
+                            song_name = s.get("songName", "")
+                            artist_name = s.get("artistName", "")
+                            track_title = f"{song_name} - {artist_name}".strip(" -") or f"Artlist_{song_id}"
+                            audio_stream_url = s.get("sitePlayableFilePath")
+                            return self._download_direct_stream(
+                                audio_stream_url,
+                                title=track_title,
+                                output_dir=output_dir,
+                                audio_format=audio_format,
+                                bitrate=bitrate,
+                            )
+                except Exception as e:
+                    if isinstance(e, InterruptedError):
+                        raise
+
+            # 2.2: Fallback phân tích trang HTML của Artlist
             try:
                 r = requests.get(url_clean, impersonate="chrome", timeout=15)
                 if r.status_code == 200:
@@ -317,14 +398,17 @@ class VideoDownloader:
                         raw_title = m_title.group(1)
                         title = raw_title.replace(" - Royalty Free Music | Artlist", "").replace(" | Artlist", "").strip() or "Artlist_Track"
 
-                    m_audio = re.search(r'"sitePlayableFilePath"\s*:\s*"(https://cms-public-artifacts\.artlist\.io/[a-zA-Z0-9_/=+-]+)"', html)
-                    if not m_audio:
-                        m_audio = re.search(r'sitePlayableFilePath[^:]*:[^h]*(https://cms-public-artifacts\.artlist\.io/[a-zA-Z0-9_/=+-]+)', html)
-                    if not m_audio:
-                        m_audio = re.search(r'(https://cms-public-artifacts\.artlist\.io/[a-zA-Z0-9_/=+-]+)', html)
+                    # Khớp luồng audio từ JSON state (hỗ trợ cả nháy thường, nháy escape \", và link CDN)
+                    m_audio = (
+                        re.search(r'sitePlayableFilePath\\?":\\?"(https://cms-public-artifacts\.artlist\.io/[a-zA-Z0-9_/=+-]+)', html)
+                        or re.search(r'(https://cms-public-artifacts\.artlist\.io/[a-zA-Z0-9_/=+-]+)', html)
+                        or re.search(r'(https://cdn\.artlist\.io/[a-zA-Z0-9_/=+-]+\.(?:mp3|aac|wav|m4a))', html)
+                    )
 
                     if m_audio:
                         audio_stream_url = m_audio.group(1)
+                        if title == "Artlist_Track":
+                            title = self._clean_artlist_stream_title(audio_stream_url, title)
                         return self._download_direct_stream(
                             audio_stream_url,
                             title=title,
@@ -335,7 +419,12 @@ class VideoDownloader:
             except Exception as e:
                 if isinstance(e, InterruptedError):
                     raise
-                pass
+
+            raise RuntimeError(
+                "Không thể trích xuất luồng âm thanh từ liên kết Artlist này.\n"
+                "Vui lòng kiểm tra lại liên kết bài hát trên Artlist (ví dụ: https://artlist.io/royalty-free-music/song/.../5000) "
+                "hoặc dán trực tiếp liên kết phát audio."
+            )
 
         # ── 3. HỖ TRỢ TRỰC TIẾP: Link stream audio / CDN (MP3, AAC, M4A, WAV, audiocdn, cms-public-artifacts) ──
         is_direct_audio = any(
@@ -346,6 +435,8 @@ class VideoDownloader:
         if is_direct_audio:
             parsed = urllib.parse.urlparse(url_clean)
             raw_filename = Path(parsed.path).stem or "audio_download"
+            if "cms-public-artifacts.artlist.io" in url_clean:
+                raw_filename = self._clean_artlist_stream_title(url_clean, raw_filename)
             return self._download_direct_stream(
                 url_clean,
                 title=raw_filename,
@@ -423,14 +514,6 @@ class VideoDownloader:
         except (InterruptedError, KeyboardInterrupt):
             raise InterruptedError("Tiến trình tải đã bị hủy.")
         except Exception as e:
-            err_str = str(e)
-            if "artlist.io" in url_clean.lower():
-                raise RuntimeError(
-                    "Artlist.io bảo vệ trang web bằng tường lửa Cloudflare và mã hoá phiên duyệt.\n"
-                    "👉 Cách tải nhạc Artlist về máy dễ nhất:\n"
-                    "1. Mở bài nhạc trên trình duyệt (Cốc Cốc/Chrome) > bấm F12 > chọn tab Network > tìm '.aac' hoặc '.mp3' > copy link đó dán vào đây để app tải và xuất MP3 320kbps!\n"
-                    "2. Hoặc tìm tên bài hát trên YouTube / SoundCloud rồi dán link vào đây, app sẽ tải trọn vẹn chất lượng cao nhất cho Sếp ngay lập tức!"
-                )
             raise RuntimeError(f"Không thể tải âm thanh từ link: {e}")
 
         # Kiểm tra file với extension đã chuyển đổi

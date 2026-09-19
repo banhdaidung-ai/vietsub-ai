@@ -36,6 +36,61 @@ def ms_to_time(ms: int) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms_rem:03d}"
 
 
+def clean_subtitle_text(text: str) -> str:
+    """
+    Làm sạch nội dung phụ đề:
+    - Loại bỏ nhãn người nói (Speaker 1:, Người nói 1:, John:, Man:,...)
+    - Loại bỏ chú thích âm thanh ([Music], (Laughter), [tiếng cười], ♪, ♫,...)
+    - Loại bỏ thẻ định dạng HTML/ASS (<i>, </i>, <b>, </b>, {\\an8},...)
+    """
+    if not text:
+        return ""
+
+    lines = []
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        # 1. Bỏ thẻ HTML và ASS override tags
+        line = re.sub(r"<[^>]+>", "", line)
+        line = re.sub(r"\{[^\}]+\}", "", line)
+
+        # 2. Bỏ các ký tự biểu tượng âm nhạc
+        for sym in ("♪", "♫", "♩", "♬", "¶"):
+            line = line.replace(sym, "")
+
+        # 3. Bỏ chú thích âm thanh trong ngoặc [...] hoặc (...)
+        # Ví dụ: [Nhạc], [Music], (tiếng cười), (Laughter), [Vỗ tay], (Applause)...
+        line = re.sub(
+            r"\[(?:Nhạc|Music|Âm nhạc|Sound|Applause|Vỗ tay|Cười|Laughter|Cheering|Tiếng [^\]]+|Background [^\]]+)\]",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        )
+        line = re.sub(
+            r"\((?:Nhạc|Music|Âm nhạc|Sound|Applause|Vỗ tay|Cười|Laughter|Cheering|Tiếng [^\)]+|Background [^\)]+)\)",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        )
+
+        # 4. Bỏ nhãn người nói đầu câu (Speaker 1:, Người nói:, John:, Man:, Woman:,...)
+        # Chỉ loại bỏ khi có dấu hai chấm ở đầu câu và phía trước là tên/vai trò ngắn (< 25 ký tự)
+        line = re.sub(
+            r"^(?:Speaker\s*\w+|Person\s*\w+|Người\s*nói\s*\w*|Nhân\s*vật\s*\w*|Thuyết\s*minh|[A-Z][a-z]{1,15})\s*:\s*",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        )
+
+        line = " ".join(line.split()).strip()
+        if line:
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
 def normalize_timestamp(ts_str: str) -> str:
     """
     Chuẩn hóa timestamp SRT thành đúng định dạng 3 phần: 'HH:MM:SS,mmm'.
@@ -48,7 +103,17 @@ def normalize_timestamp(ts_str: str) -> str:
     """
     ts_str = ts_str.strip().replace(".", ",")
     parts = ts_str.split(":")
-    if len(parts) == 2:  # MM:SS,mmm hoặc MM:SS
+    if len(parts) == 1:
+        # Chỉ có giây: e.g. "45,500" hoặc "120"
+        s_parts = parts[0].split(",")
+        s = int(s_parts[0]) if s_parts[0].isdigit() else 0
+        ms_str = s_parts[1] if len(s_parts) > 1 else "000"
+        ms = int(ms_str.ljust(3, "0")[:3]) if ms_str.isdigit() else 0
+        h = s // 3600
+        m = (s % 3600) // 60
+        s = s % 60
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    elif len(parts) == 2:  # MM:SS,mmm hoặc MM:SS
         m_str, s_ms = parts[0], parts[1]
         s_parts = s_ms.split(",")
         s = int(s_parts[0]) if s_parts[0].isdigit() else 0
@@ -70,6 +135,10 @@ def normalize_timestamp(ts_str: str) -> str:
     return ts_str
 
 
+# Regex nhận diện dấu mũi tên SRT linh hoạt (--> hoặc -> hoặc –> hoặc —> hoặc ~>)
+ARROW_REGEX = r"(?:-->|->|–>|—>|~>)"
+
+
 def normalize_srt_content(srt_content: str) -> str:
     """
     Quét và tự động chuẩn hóa toàn bộ timestamp trong nội dung SRT về chuẩn ISO SRT (HH:MM:SS,mmm).
@@ -83,29 +152,29 @@ def normalize_srt_content(srt_content: str) -> str:
         end = normalize_timestamp(match.group(2))
         return f"{start} --> {end}"
 
-    pattern = r"(\d{1,2}:\d{1,2}(?::\d{1,2})?(?:[,\.]\d{1,3})?)\s*-->\s*(\d{1,2}:\d{1,2}(?::\d{1,2})?(?:[,\.]\d{1,3})?)"
+    pattern = rf"(\d{{1,2}}:\d{{1,2}}(?::\d{{1,2}})?(?:[,\.]\d{{1,3}})?)\s*{ARROW_REGEX}\s*(\d{{1,2}}:\d{{1,2}}(?::\d{{1,2}})?(?:[,\.]\d{{1,3}})?)"
     return re.sub(pattern, replace_arrow, srt_content)
 
 
 def parse_srt(srt_content: str) -> List[SRTSegment]:
-    """Parse nội dung SRT thành danh sách SRTSegment (tự động chuẩn hóa timestamp)."""
+    """Parse nội dung SRT thành danh sách SRTSegment (tự động chuẩn hóa timestamp & text)."""
     segments: List[SRTSegment] = []
     content = normalize_srt_content(srt_content.strip().replace("\r\n", "\n").replace("\r", "\n"))
     blocks = re.split(r"\n\s*\n+", content)
+
+    # Pattern nhận diện dòng timestamp linh hoạt
+    ts_pattern = rf"(\d{{1,2}}:\d{{1,2}}(?::\d{{1,2}})?(?:[,\.]\d{{1,3}})?)\s*{ARROW_REGEX}\s*(\d{{1,2}}:\d{{1,2}}(?::\d{{1,2}})?(?:[,\.]\d{{1,3}})?)"
 
     for block in blocks:
         lines = [line.strip() for line in block.strip().split("\n") if line.strip()]
         if not lines:
             continue
 
-        # Tìm dòng chứa timestamp (-->)
+        # Tìm dòng chứa timestamp (--> hoặc các biến thể mũi tên)
         ts_idx = -1
         ts_match = None
         for idx, line in enumerate(lines):
-            m = re.search(
-                r"(\d{1,2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{3})",
-                line,
-            )
+            m = re.search(ts_pattern, line)
             if m:
                 ts_idx = idx
                 ts_match = m
@@ -114,8 +183,8 @@ def parse_srt(srt_content: str) -> List[SRTSegment]:
         if ts_idx == -1 or not ts_match:
             continue
 
-        start_str = ts_match.group(1).replace(".", ",")
-        end_str = ts_match.group(2).replace(".", ",")
+        start_str = normalize_timestamp(ts_match.group(1))
+        end_str = normalize_timestamp(ts_match.group(2))
 
         # Index
         index = len(segments) + 1
@@ -127,8 +196,9 @@ def parse_srt(srt_content: str) -> List[SRTSegment]:
                 except ValueError:
                     pass
 
-        # Text nội dung
-        text = "\n".join(lines[ts_idx + 1:]).strip()
+        # Text nội dung (làm sạch thẻ, chú thích âm thanh và nhãn người nói)
+        raw_text = "\n".join(lines[ts_idx + 1:]).strip()
+        text = clean_subtitle_text(raw_text)
         if not text:
             continue
 
@@ -159,7 +229,7 @@ def clean_srt_response(response_text: str) -> str:
     lines = text.split("\n")
     start_idx = 0
     for i, line in enumerate(lines):
-        if re.match(r"^\s*\d+\s*$", line) or "-->" in line:
+        if re.match(r"^\s*\d+\s*$", line) or re.search(ARROW_REGEX, line):
             start_idx = i
             break
 

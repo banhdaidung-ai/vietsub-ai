@@ -17,7 +17,7 @@ hiddenimports = [
     'pydantic.deprecated.decorator',
 ]
 
-for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi']:
+for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2']:
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
@@ -56,10 +56,14 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'tkinter.test', 'unittest', 'test',
+        'tkinter.test', 'unittest', 'test', 'tests',
         'email.test', 'xmlrpc', 'pydoc', 'sqlite3',
         'matplotlib', 'scipy', 'numpy', 'pandas',
         'static_ffmpeg',
+        'torch', 'torchaudio', 'torchvision', 'demucs',
+        'sympy', 'networkx', 'safetensors', 'einops',
+        'julius', 'lameenc', 'setuptools',
+        'pip', 'wheel', 'IPython', 'jupyter',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -123,8 +127,8 @@ if is_mac:
             'CFBundleName': 'Vietsub AI',
             'CFBundleDisplayName': 'Vietsub AI',
             'CFBundleIdentifier': 'com.vietsubai.app',
-            'CFBundleVersion': '1.0.8',
-            'CFBundleShortVersionString': '1.0.8',
+            'CFBundleVersion': '1.0.9',
+            'CFBundleShortVersionString': '1.0.9',
             'NSHighResolutionCapable': True,
             'LSMinimumSystemVersion': '11.0',
             'NSHumanReadableCopyright': 'Copyright © 2026 Vietsub AI',

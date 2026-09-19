@@ -124,17 +124,17 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", pady=(0, 4))
 
         self.model_map = {
-            "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5)": "auto",
+            "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 3.5)": "auto",
             "⚡ Gemini 3.8 Flash (Mới nhất, siêu nhanh & thông minh)": "gemini-3.8-flash",
             "🚀 Gemini 3.7 Flash (Thế hệ mới 3.7)": "gemini-3.7-flash",
             "✨ Gemini 3.6 Flash (Tốc độ cao 3.6)": "gemini-3.6-flash",
-            "🛡️ Gemini 2.5 Flash (Bản chuẩn, ít nghẽn tải nhất)": "gemini-2.5-flash",
+            "🛡️ Gemini 3.5 Flash (Bản chuẩn, ổn định & ít nghẽn)": "gemini-3.5-flash",
         }
         self.reverse_model_map = {v: k for k, v in self.model_map.items()}
 
         current_model = self.config.get("gemini_model", "auto")
         current_model_display = self.reverse_model_map.get(
-            current_model, "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5)"
+            current_model, "🔄 Tự động (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 3.5)"
         )
 
         self.model_display_var = ctk.StringVar(value=current_model_display)

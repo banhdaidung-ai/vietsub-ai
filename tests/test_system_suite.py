@@ -39,8 +39,8 @@ def test_1_config_and_gemini_auto_model():
     assert DEFAULT_CONFIG["gemini_model"] == "auto", "DEFAULT_CONFIG['gemini_model'] phải là 'auto'"
     
     cfg = load_config()
-    assert cfg.get("gemini_model") == "auto", f"load_config() model phải là 'auto', hiện tại: {cfg.get('gemini_model')}"
-    print("   ✅ Cấu hình mặc định: gemini_model = 'auto' (Ưu tiên 3.8 ➔ 3.7 ➔ 3.6 ➔ 2.5) [PASS]")
+    assert cfg.get("gemini_model") in ["auto", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"], f"load_config() model không hợp lệ, hiện tại: {cfg.get('gemini_model')}"
+    print(f"   ✅ Cấu hình model hợp lệ: gemini_model = '{cfg.get('gemini_model')}' [PASS]")
 
 
 def test_2_srt_parsing_and_normalization():

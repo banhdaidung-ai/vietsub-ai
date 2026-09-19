@@ -132,23 +132,27 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.8' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.8 — Khắc Phục Mất Câu TTS & Tối Ưu Tốc Độ Khởi Động Siêu Nhanh' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.9' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.9 — Tối Ưu Dung Lượng Siêu Nhẹ (Giảm 70%) & Hoàn Thiện Âm Thanh' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.0.8 — Độ Ổn Định Vượt Trội & Tối Ưu Windows/macOS
+            ## 🎉 Bản Phát Hành Vietsub AI v1.0.9 — Tối Ưu Dung Lượng Siêu Nhẹ & Tinh Chỉnh Âm Thanh
 
-            Bản cập nhật v1.0.8 tập trung giải quyết triệt để vấn đề giọng thoại bị ngắt quãng trên Windows và tối ưu hóa hiệu năng khởi động tức thì:
-            - **🗣️ Khắc Phục Triệt Để Giọng Thoại Câu Được Câu Mất (Phương án A):**
+            Phiên bản v1.0.9 mang đến bước tiến đột phá về tối ưu hóa bộ cài đặt, giảm hơn 70% dung lượng tệp cài đặt và nâng cấp toàn diện chất lượng giọng đọc AI:
+            - **📦 Tối Ưu Dung Lượng Cài Đặt Siêu Nhẹ (Giảm ~70%):**
+              - Tinh chỉnh sâu tiến trình PyInstaller, loại bỏ triệt để hàng trăm MB thư viện thừa và bộ nhúng không cần thiết.
+              - Giảm dung lượng file cài đặt macOS `.dmg` từ **282MB xuống còn ~80MB**.
+              - Giảm dung lượng file nén Windows `.zip` từ **228MB xuống còn ~80MB**.
+              - Tốc độ tải về cực nhanh, giải nén nhẹ nhàng và tiết kiệm tài nguyên bộ nhớ tối đa.
+            - **🗣️ Khắc Phục Triệt Để Giọng Thoại Câu Được Câu Mất (TTS Phương Án A):**
               - Tăng số lần thử lại (retry) Edge-TTS lên 5 lần với cơ chế giãn cách tăng dần (exponential backoff).
-              - Tự động chèn khoảng lặng (silence segment) giữ nguyên timeline video nếu gặp câu thoại bị lỗi, đảm bảo các câu thoại tiếp theo luôn khớp 100% thời gian phụ đề.
-              - Cơ chế dự phòng thông minh (Gemini ➔ Edge-TTS) từng câu đơn lẻ: nếu một câu bị gián đoạn nhẹ, hệ thống lập tức bù đắp bằng Microsoft AI thay vì làm hỏng toàn bộ tiến trình.
-              - Thêm độ trễ điều phối (pacing delay) chống tình trạng ngắt kết nối WebSocket do tường lửa/Windows Defender.
-              - Ghi log chi tiết và bảng tổng kết số câu thành công ngay trên Studio Terminal.
-            - **⚡ Khởi Động Tức Thì & Phản Hồi Siêu Nhạy (Zero Delay):**
-              - Áp dụng cơ chế **Lazy-Loading** cho toàn bộ các thư viện AI nặng (`Pipeline`, `Demucs`, `VideoDownloader`, `curl_cffi`). Ứng dụng mở lên chỉ trong 0.08 giây.
-              - Chuyển tác vụ kiểm tra môi trường khi khởi động sang background thread, hoàn toàn không chặn luồng giao diện chính.
-              - Bộ nhớ đệm FFmpeg thông minh: kiểm tra hệ thống phản hồi tức thì 0ms, loại bỏ hoàn toàn độ trễ khi mở Cài đặt hoặc nhấn Bắt đầu dịch.
-            - **🎬 Tích Hợp Đầy Đủ Bộ Mẫu Phụ Đề CapCut & Công Cụ Tách Âm Demucs v4.**
+              - Tự động bù đắp khoảng lặng (silence segment) giữ nguyên timeline video nếu gặp câu thoại lỗi mạng, đảm bảo 100% các câu thoại sau không bị lệch khớp phụ đề.
+              - Cơ chế dự phòng thông minh (Gemini ➔ Edge-TTS) từng câu đơn lẻ: bù đắp bằng Microsoft AI tức thì mà không gián đoạn tiến trình.
+              - Thêm độ trễ điều phối (pacing delay) chống ngắt kết nối WebSocket do tường lửa/Windows Defender.
+            - **🎯 Tính Năng Kéo Thả Tiện Lợi (Drag & Drop):**
+              - Tích hợp thư viện kéo thả tệp hiện đại, hỗ trợ thả trực tiếp video hoặc âm thanh từ Finder / File Explorer vào ứng dụng.
+            - **⚡ Khởi Động Tức Thì (Zero Delay):**
+              - Áp dụng cơ chế **Lazy-Loading** cho toàn bộ các module nặng, mở ứng dụng tức thì chỉ trong 0.08 giây.
+            - **🎬 Đầy Đủ Preset Phụ Đề CapCut, Tách Lời & Nhạc Beat, Tải Video Douyin 1080p.**
             - **📦 Bộ Cài Đặt Tích Hợp Sẵn FFmpeg 100% Offline.**
 
             ### 📥 Tải xuống cài đặt:

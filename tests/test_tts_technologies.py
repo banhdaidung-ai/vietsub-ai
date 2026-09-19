@@ -45,6 +45,21 @@ def test_text_smoothing_logic():
     assert gen._smooth_segment_text("Tôi đang đi học...", is_mid_sentence=True) == "Tôi đang đi học..."
 
 
+def test_edge_tts_text_preparation():
+    """Kiểm tra chuẩn hóa văn bản riêng cho Microsoft Edge-TTS để chống lỗi No audio received."""
+    gen = TTSGenerator()
+
+    # Dấu phẩy ở cuối câu (do nối câu giữa chừng) phải được rstrip để tránh ngắt WebSocket SSML
+    assert gen._prepare_text_for_edge_tts("Xin chào các bạn,") == "Xin chào các bạn"
+    assert gen._prepare_text_for_edge_tts("Tôi đang nói thì -") == "Tôi đang nói thì"
+    assert gen._prepare_text_for_edge_tts("Chi tiết là:") == "Chi tiết là"
+
+    # Dấu ba chấm '...' và '…' phải được chuyển thành dấu chấm '.' để không bị server Microsoft đóng stream rỗng
+    assert gen._prepare_text_for_edge_tts("Không thể nào...") == "Không thể nào."
+    assert gen._prepare_text_for_edge_tts("Đợi đã…") == "Đợi đã."
+    assert gen._prepare_text_for_edge_tts("   Câu thoại bình thường.   ") == "Câu thoại bình thường."
+
+
 def test_tts_generator_init_edge():
     """Kiểm tra khởi tạo công nghệ Microsoft AI với tốc độ & cao độ tùy chỉnh."""
     gen = TTSGenerator(
@@ -187,4 +202,121 @@ def test_check_ffmpeg_caching():
     ok2, msg2 = check_ffmpeg()
     assert ok2 is True
     assert msg1 == msg2
+
+
+def test_clean_subtitle_text_and_speaker_labels():
+    """Kiểm tra làm sạch nhãn người nói và chú thích âm thanh khỏi phụ đề và lời đọc TTS."""
+    from utils.srt_parser import clean_subtitle_text
+
+    raw1 = "Speaker 1: Xin chào tất cả các bạn!"
+    assert clean_subtitle_text(raw1) == "Xin chào tất cả các bạn!"
+
+    raw2 = "Người nói: Hôm nay chúng ta sẽ cùng khám phá."
+    assert clean_subtitle_text(raw2) == "Hôm nay chúng ta sẽ cùng khám phá."
+
+    raw3 = "John: Tuyệt vời quá! [Music] ♪ ♫"
+    assert clean_subtitle_text(raw3) == "Tuyệt vời quá!"
+
+    raw4 = "<i>Thuyết minh:</i> Cảm ơn mọi người đã theo dõi (tiếng vỗ tay)."
+    assert clean_subtitle_text(raw4) == "Cảm ơn mọi người đã theo dõi ."
+
+
+def test_parse_srt_flexible_arrows_and_timestamps():
+    """Kiểm tra parse SRT với các biến thể mũi tên (->, –>, —>) và timestamp 2 phần (MM:SS,mmm)."""
+    from utils.srt_parser import parse_srt
+
+    srt_content = """
+1
+00:01,500 -> 00:04,200
+Chào mừng các bạn đã quay trở lại!
+
+2
+00:00:05,000 –> 00:00:08,000
+Speaker 1: Đây là câu thứ hai với mũi tên en-dash.
+
+3
+00:00:08,500 —> 00:00:11,500
+[Nhạc] Và đây là câu thứ ba với mũi tên em-dash.
+"""
+    segs = parse_srt(srt_content)
+    assert len(segs) == 3
+    assert segs[0].start == "00:00:01,500"
+    assert segs[0].end == "00:00:04,200"
+    assert segs[0].text == "Chào mừng các bạn đã quay trở lại!"
+    assert segs[1].text == "Đây là câu thứ hai với mũi tên en-dash."
+    assert segs[2].text == "Và đây là câu thứ ba với mũi tên em-dash."
+
+
+@pytest.mark.asyncio
+async def test_consistent_tts_voice_retention():
+    """Kiểm tra nguyên tắc đồng nhất: Giữ nguyên 100% giọng đọc đã chọn xuyên suốt video, không đổi giọng giữa chừng."""
+    logs = []
+    used_voices = []
+    gen = TTSGenerator(
+        voice="vi-VN-NamMinhNeural",
+        tts_technology="edge",
+        log_callback=lambda msg: logs.append(msg),
+    )
+
+    async def mock_generate(text, out_path, voice_override=None):
+        used_voices.append(voice_override)
+        with open(out_path, "wb") as f:
+            f.write(b"fake-audio-data")
+        return True
+
+    with patch.object(gen, "_generate_single_edge_tts", side_effect=mock_generate):
+        with patch.object(gen, "_create_silence_audio", return_value=True):
+            with patch.object(gen, "_get_audio_duration_ms", return_value=1500):
+                with patch.object(gen, "_combine_segments", return_value=None):
+                    segs = [
+                        SRTSegment(index=1, start="00:00:01,000", end="00:00:04,000", text="Câu thứ nhất", start_ms=1000, end_ms=4000),
+                        SRTSegment(index=2, start="00:00:05,000", end="00:00:08,000", text="Câu thứ hai", start_ms=5000, end_ms=8000),
+                        SRTSegment(index=3, start="00:00:09,000", end="00:00:12,000", text="Câu thứ ba", start_ms=9000, end_ms=12000),
+                    ]
+                    tmp_out = os.path.join(tempfile.gettempdir(), "test_track_consistent.mp3")
+                    await gen._generate_track_async(segs, 15.0, tmp_out)
+
+                    # Xác nhận tất cả các câu đều dùng duy nhất giọng Nam Minh đã chọn, tuyệt đối không có Hoài My
+                    assert len(used_voices) == 3
+                    assert all(v == "vi-VN-NamMinhNeural" for v in used_voices)
+                    assert not any("HoaiMy" in l or "đối ứng" in l for l in logs)
+
+
+@pytest.mark.asyncio
+async def test_persistent_edge_tts_retry_until_success():
+    """Kiểm tra cơ chế kiên trì thử lại: Gặp lỗi mạng tạm thời sẽ tự động thử lại cho đến khi thành công 100%."""
+    logs = []
+    gen = TTSGenerator(
+        voice="vi-VN-NamMinhNeural",
+        tts_technology="edge",
+        log_callback=lambda msg: logs.append(msg),
+    )
+
+    call_count = 0
+
+    class MockCommunicate:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def save(self, out_path):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                # Giả lập lỗi ngắt kết nối WebSocket ở 2 lần đầu
+                raise Exception("WebSocket Connection Reset")
+            # Lần thứ 3 thành công
+            with open(out_path, "wb") as f:
+                f.write(b"valid-mp3-audio-stream")
+
+    tmp_out = os.path.join(tempfile.gettempdir(), "test_retry_success.mp3")
+    with patch("edge_tts.Communicate", side_effect=MockCommunicate):
+        with patch("asyncio.sleep", return_value=None):  # Bỏ qua delay trong unit test
+            success = await gen._generate_single_edge_tts("Xin chào Việt Nam", tmp_out)
+            assert success is True
+            assert call_count == 3
+            assert any("Đã tạo thành công" in l for l in logs)
+            assert any("thử lại lần 2" in l for l in logs)
+
+
+
 

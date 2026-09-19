@@ -12,7 +12,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "gemini_api_key": "",
-    "gemini_model": "auto",  # "auto" (Tự động ưu tiên 3.8 -> 3.7 -> 3.6 -> 2.5) | "gemini-3.8-flash" | "gemini-3.7-flash" | "gemini-3.6-flash" | "gemini-2.5-flash"
+    "gemini_model": "auto",  # "auto" (Tự động ưu tiên 3.8 -> 3.7 -> 3.6 -> 3.5) | "gemini-3.8-flash" | "gemini-3.7-flash" | "gemini-3.6-flash" | "gemini-3.5-flash"
     "tts_technology": "edge",     # "edge" (Microsoft AI Chuẩn Việt) | "gemini" (Google Gemini AI Biểu Cảm)
     "tts_voice": "vi-VN-HoaiMyNeural",
     "tts_voice_gemini": "Aoede",  # "Aoede" | "Kore" | "Charon" | "Fenrir" | "Puck"
@@ -61,8 +61,8 @@ def load_config() -> dict:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            # Tự động nâng cấp model cũ 3.8 sang chế độ auto theo yêu cầu
-            if saved.get("gemini_model") == "gemini-3.8-flash":
+            # Tự động chuyển model 2.5 cũ (đã bị Google khai tử 404) sang chế độ auto
+            if saved.get("gemini_model") == "gemini-2.5-flash":
                 saved["gemini_model"] = "auto"
             # Đảm bảo output_dir không rỗng
             if not saved.get("output_dir") or not str(saved.get("output_dir")).strip():

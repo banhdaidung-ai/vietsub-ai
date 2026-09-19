@@ -78,12 +78,12 @@ class TTSGenerator:
     def _smooth_segment_text(self, text: str, is_mid_sentence: bool = False) -> str:
         """
         Làm mượt văn bản để AI đọc có hồn và tự nhiên:
-        - Bỏ các ký tự đặc biệt / nốt nhạc.
+        - Bỏ các ký tự đặc biệt, nốt nhạc, nhãn người nói và chú thích âm thanh.
         - Nếu câu nói đang dở dang và tiếp tục ở dòng sau, thêm dấu phẩy nhẹ để tránh hạ giọng cụt lủn.
         """
-        clean = " ".join(text.split()).strip()
-        for sym in ("♪", "♫", "♩", "♬", "[Nhạc]", "[Âm nhạc]"):
-            clean = clean.replace(sym, "").strip()
+        from utils.srt_parser import clean_subtitle_text
+        cleaned_text = clean_subtitle_text(text)
+        clean = " ".join(cleaned_text.split()).strip()
 
         if not clean:
             return ""
@@ -112,8 +112,24 @@ class TTSGenerator:
         else:
             return asyncio.run(self._generate_single_edge_tts(tts_text, out_path))
 
-    async def _generate_single_edge_tts(self, text: str, out_path: str) -> bool:
-        """Tạo audio cho một câu dùng Microsoft Edge-TTS."""
+    def _prepare_text_for_edge_tts(self, text: str) -> str:
+        """
+        Chuẩn hóa văn bản tương thích 100% với Microsoft Edge-TTS:
+        - Chuyển dấu ba chấm ('...', '…') thành dấu chấm '.' (Edge-TTS ngắt kết nối WebSocket nếu gặp dấu ba chấm).
+        - Loại bỏ các dấu kết thúc dở dang ở cuối câu: dấu phẩy ',', gạch ngang '-', hai chấm ':', chấm phẩy ';'
+          (tránh Edge-TTS báo lỗi 'No audio was received' do cụm từ chưa kết thúc SSML).
+        """
+        if not text:
+            return ""
+        t = text.replace("...", ".").replace("…", ".")
+        # Loại bỏ các ký tự dấu câu dở dang ở cuối câu
+        t = t.rstrip(" ,;:-")
+        return " ".join(t.split()).strip()
+
+    async def _generate_single_edge_tts(
+        self, text: str, out_path: str, voice_override: Optional[str] = None
+    ) -> bool:
+        """Tạo audio cho một câu dùng Microsoft Edge-TTS (hỗ trợ voice override và tự động dọn dẹp file lỗi)."""
         # Chuẩn hóa rate và pitch
         rate_val = self.speed
         if not rate_val.startswith(("+", "-")):
@@ -127,31 +143,85 @@ class TTSGenerator:
         if not pitch_val.endswith("Hz"):
             pitch_val = f"{pitch_val}Hz"
 
-        # Nếu voice được truyền là voice của Gemini (do người dùng chuyển chế độ), fallback về Hoài My
-        voice_name = self.voice
+        # Nếu có voice_override thì ưu tiên dùng; nếu không thì dùng self.voice
+        voice_name = voice_override or self.voice
         if not voice_name.startswith("vi-VN-"):
             voice_name = "vi-VN-HoaiMyNeural"
 
-        for attempt in range(5):
+        # Tiền xử lý văn bản tương thích hoàn hảo với Microsoft Edge-TTS
+        clean_edge_text = self._prepare_text_for_edge_tts(text)
+        if not clean_edge_text:
+            return False
+
+        attempt = 0
+        max_attempts = 6
+        while attempt < max_attempts:
             if self.is_cancelled and self.is_cancelled():
                 raise InterruptedError("Đã hủy bởi người dùng.")
+
+            attempt += 1
+
+            # Dọn dẹp file tạm 0 byte nếu có từ lần thử trước
+            if os.path.exists(out_path) and os.path.getsize(out_path) == 0:
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
+
+            current_text = clean_edge_text
+            current_rate = rate_val
+            current_pitch = pitch_val
+
+            # Nếu thử lại từ lần 3 trở đi, làm sạch sâu hơn và dùng tham số chuẩn
+            if attempt >= 3:
+                import re
+                current_text = re.sub(r'[^\w\s.,!?-]', '', clean_edge_text).strip()
+                current_text = self._prepare_text_for_edge_tts(current_text) or clean_edge_text
+                current_rate = "+0%"
+                current_pitch = "+0Hz"
+
             try:
                 communicate = edge_tts.Communicate(
-                    text=text,
+                    text=current_text,
                     voice=voice_name,
-                    rate=rate_val,
-                    pitch=pitch_val,
+                    rate=current_rate,
+                    pitch=current_pitch,
+                    connect_timeout=10,
+                    receive_timeout=20,
                 )
                 await communicate.save(out_path)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                    if attempt > 1:
+                        self._log(f"   ✅ Đã tạo thành công giọng {voice_name} ở lần thử thứ {attempt}!")
                     return True
+            except (InterruptedError, KeyboardInterrupt):
+                raise
             except Exception as e:
-                if attempt < 4:
-                    wait_sec = min(1.0 * (attempt + 1), 4.0)  # 1s, 2s, 3s, 4s
-                    self._log(f"   ⚠️ Edge-TTS retry {attempt + 1}/5 (chờ {wait_sec:.0f}s): {e}")
-                    await asyncio.sleep(wait_sec)
+                # Xóa file 0 byte nếu có
+                if os.path.exists(out_path) and os.path.getsize(out_path) == 0:
+                    try:
+                        os.remove(out_path)
+                    except Exception:
+                        pass
+
+                if attempt >= max_attempts:
+                    self._log(f"   ❌ Giọng {voice_name} không phản hồi sau {max_attempts} lần thử.")
+                    return False
+
+                # Tăng dần thời gian chờ: 0.6s -> 0.9s -> 1.2s -> ... tối đa 2.5s
+                wait_sec = min(0.6 + 0.3 * min(attempt, 5), 2.5)
+                err_str = str(e)
+                if "No audio was received" in err_str:
+                    err_hint = "Máy chủ Microsoft ngắt kết nối tạm thời"
                 else:
-                    self._log(f"   ❌ Edge-TTS thất bại sau 5 lần thử: {e}")
+                    err_hint = err_str
+
+                self._log(
+                    f"   🔄 Giọng {voice_name} gặp gián đoạn ({err_hint}). "
+                    f"Đang tự động thử lại lần {attempt + 1}/{max_attempts} (chờ {wait_sec:.1f}s)..."
+                )
+                await asyncio.sleep(wait_sec)
+
         return False
 
     def _generate_single_gemini_tts(self, text: str, out_path: str) -> bool:
@@ -291,16 +361,6 @@ class TTSGenerator:
                         success = False
 
                     if not success:
-                        # Dự phòng câu đơn lẻ: Thử ngay bằng Microsoft Edge-TTS cho câu này trước khi tính là lỗi
-                        try:
-                            edge_fallback = await self._generate_single_edge_tts(tts_text, seg_path)
-                            if edge_fallback:
-                                success = True
-                                self._log(f"   ℹ️ Câu {i + 1}: Gemini gián đoạn nhẹ → đã tự động dùng Microsoft AI lồng tiếng câu này.")
-                        except Exception:
-                            pass
-
-                    if not success:
                         gemini_consecutive_failures += 1
                         # Cho phép chịu đựng tối đa 3 lỗi liên tiếp trước khi abort toàn bộ sang Edge-TTS
                         if gemini_consecutive_failures >= 3:
@@ -308,7 +368,7 @@ class TTSGenerator:
                             gemini_aborted = True
                             break
                         else:
-                            # Chèn khoảng lặng chuẩn timeline cho câu này (Phương án A)
+                            # Chèn khoảng lặng chuẩn timeline cho câu này để giữ nguyên tính đồng nhất của giọng nói
                             seg_dur_sec = max((seg.end_ms - seg.start_ms) / 1000.0, 0.4)
                             silence_path = os.path.join(tmp_dir, f"silence_gemini_{i:04d}.mp3")
                             if self._create_silence_audio(ffmpeg, seg_dur_sec, silence_path):
@@ -326,7 +386,7 @@ class TTSGenerator:
                         0.0,
                         "⚠️ Gemini AI hết hạn mức Google. Đang chuyển toàn bộ sang Microsoft AI để đồng nhất 1 giọng...",
                     )
-                    self._log("🔄 Chuyển toàn bộ lồng tiếng sang Microsoft Edge-TTS để đảm bảo đồng nhất giọng nói.")
+                    self._log("🔄 Chuyển toàn bộ lồng tiếng sang Microsoft Edge-TTS để đảm bảo đồng nhất 1 giọng nói.")
                     use_gemini = False
                 else:
                     seg_paths = temp_gemini_paths
@@ -336,13 +396,18 @@ class TTSGenerator:
                 seg_paths = []
                 tts_success_count = 0
                 tts_skip_count = 0
+
+                # Giữ nguyên 100% giọng đọc được người dùng lựa chọn trong suốt toàn bộ video
+                chosen_voice = self.voice if self.voice.startswith("vi-VN-") else "vi-VN-NamMinhNeural"
+                self._log(f"🎙️ Giọng đọc được chọn cố định: {chosen_voice} (đồng nhất 100% xuyên suốt video)")
+
                 for i, seg in enumerate(segments):
                     if self.is_cancelled and self.is_cancelled():
                         raise InterruptedError("Đã hủy bởi người dùng.")
 
                     self._report(
                         i / len(segments),
-                        f"Lồng tiếng (Microsoft AI) câu {i + 1}/{len(segments)}...",
+                        f"Lồng tiếng ({chosen_voice}) câu {i + 1}/{len(segments)}...",
                     )
 
                     is_mid = False
@@ -356,15 +421,19 @@ class TTSGenerator:
                         continue
 
                     seg_path = os.path.join(tmp_dir, f"seg_edge_{i:04d}.mp3")
-                    success = await self._generate_single_edge_tts(tts_text, seg_path)
+
+                    # Luôn dùng đúng giọng đọc đã chọn (tuyệt đối không tự ý đổi sang giọng khác)
+                    success = await self._generate_single_edge_tts(tts_text, seg_path, voice_override=chosen_voice)
+
+                    # Nếu không thành công sau nhiều lần thử, chèn khoảng lặng giữ timeline để bảo toàn tính đồng nhất của giọng nói
                     if not success:
                         tts_skip_count += 1
                         seg_dur_sec = max((seg.end_ms - seg.start_ms) / 1000.0, 0.4)
                         silence_path = os.path.join(tmp_dir, f"silence_edge_{i:04d}.mp3")
                         if self._create_silence_audio(ffmpeg, seg_dur_sec, silence_path):
                             self._log(
-                                f"   ⚠️ Câu {i + 1}/{len(segments)} lỗi Edge-TTS sau 5 lần thử "
-                                f"→ đã chèn khoảng lặng {seg_dur_sec:.1f}s giữ timeline: \"{tts_text[:40]}...\""
+                                f"   ⚠️ Câu {i + 1}/{len(segments)}: Giọng {chosen_voice} mất kết nối sau nhiều lần thử "
+                                f"→ đã chèn khoảng lặng {seg_dur_sec:.1f}s giữ timeline (bảo toàn giọng đã chọn): \"{tts_text[:40]}...\""
                             )
                             seg_paths.append((seg, silence_path))
                         else:
@@ -373,8 +442,8 @@ class TTSGenerator:
                         tts_success_count += 1
                         seg_paths.append((seg, seg_path))
 
-                    # Nghỉ 150ms giữa các câu để chống Microsoft WebSocket connection reset/rate limit trên Windows
-                    await asyncio.sleep(0.15)
+                    # Nghỉ 350ms giữa các câu để chống Microsoft WebSocket connection reset/rate limit
+                    await asyncio.sleep(0.35)
 
             # Điều chỉnh tốc độ thông minh & Chống đè tiếng tuyệt đối (Anti-overlap Protection)
             adjusted_seg_paths = []
@@ -382,33 +451,43 @@ class TTSGenerator:
                 # Xác định thời gian tối đa được phép phát trước khi câu tiếp theo bắt đầu
                 if i + 1 < len(seg_paths):
                     next_start_ms = seg_paths[i + 1][0].start_ms
-                    # Luôn chừa tối thiểu 80ms nghỉ trước khi câu sau phát
-                    max_allowed_ms = max(next_start_ms - seg.start_ms - 80, 400)
+                    # Chừa tối thiểu 60ms nghỉ trước khi câu sau phát
+                    max_allowed_ms = max(next_start_ms - seg.start_ms - 60, 400)
                 else:
                     seg_dur_ms = max(seg.end_ms - seg.start_ms, 600)
-                    max_allowed_ms = max(seg_dur_ms, int(total_duration_sec * 1000) - seg.start_ms - 80)
+                    max_allowed_ms = max(seg_dur_ms, int(total_duration_sec * 1000) - seg.start_ms - 60)
 
                 tts_dur_ms = self._get_audio_duration_ms(seg_path)
                 if tts_dur_ms > max_allowed_ms:
                     raw_speed = tts_dur_ms / max_allowed_ms
-                    # Tăng tốc độ mượt mà tối đa lên 1.45x
-                    speed = min(max(raw_speed, 1.05), 1.45)
+                    # Tăng tốc độ linh hoạt tối đa lên 1.75x để bảo toàn trọn vẹn ngữ nghĩa câu nói
+                    speed = min(max(raw_speed, 1.05), 1.75)
                     adjusted_path = seg_path.replace(".mp3", "_adj.mp3")
-                    max_sec = max_allowed_ms / 1000.0
-                    fade_st = max(0.0, max_sec - 0.05)
+                    new_dur_ms = tts_dur_ms / speed
 
-                    filter_str = f"atempo={speed:.3f},afade=t=out:st={fade_st:.3f}:d=0.05"
-                    subprocess.run(
-                        [
+                    # Nếu sau khi tăng tốc, thời lượng câu chỉ lệch nhẹ (< 200ms),
+                    # KHÔNG dùng cờ -t để tránh nuốt chữ/chặt đứt đuôi câu của nhân vật
+                    if new_dur_ms <= max_allowed_ms + 200:
+                        filter_str = f"atempo={speed:.3f}"
+                        cmd = [
+                            ffmpeg, "-y", "-i", seg_path,
+                            "-filter:a", filter_str,
+                            "-c:a", "libmp3lame", "-q:a", "2",
+                            adjusted_path,
+                        ]
+                    else:
+                        max_sec = (max_allowed_ms + 150) / 1000.0
+                        fade_st = max(0.0, max_sec - 0.08)
+                        filter_str = f"atempo={speed:.3f},afade=t=out:st={fade_st:.3f}:d=0.08"
+                        cmd = [
                             ffmpeg, "-y", "-i", seg_path,
                             "-filter:a", filter_str,
                             "-t", f"{max_sec:.3f}",
                             "-c:a", "libmp3lame", "-q:a", "2",
                             adjusted_path,
-                        ],
-                        capture_output=True,
-                        check=False,
-                    )
+                        ]
+
+                    subprocess.run(cmd, capture_output=True, check=False)
                     if os.path.exists(adjusted_path) and os.path.getsize(adjusted_path) > 0:
                         seg_path = adjusted_path
 

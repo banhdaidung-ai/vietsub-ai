@@ -17,22 +17,45 @@ from utils.ffmpeg_check import get_ffmpeg_path
 
 
 def check_demucs_installed() -> Tuple[bool, str]:
-    """Kiểm tra xem thư viện demucs và torch đã được cài đặt chưa."""
+    """Kiểm tra xem thư viện demucs đã sẵn sàng chưa (qua module Python hoặc CLI hệ thống)."""
+    # 1. Kiểm tra import trực tiếp nếu chạy từ mã nguồn / môi trường ảo
     try:
         import torch  # noqa: F401
         import demucs  # noqa: F401
         return True, "Demucs AI sẵn sàng."
-    except ImportError as e:
-        return False, f"Chưa cài đặt thư viện Demucs AI: {e}"
+    except ImportError:
+        pass
+
+    # 2. Kiểm tra lệnh demucs CLI có sẵn trên hệ điều hành không
+    if shutil.which("demucs"):
+        return True, "Demucs AI CLI sẵn sàng."
+
+    # 3. Kiểm tra Python hệ thống có cài demucs không
+    for py_cmd in ["python3", "python"]:
+        py_path = shutil.which(py_cmd)
+        if py_path:
+            try:
+                res = subprocess.run(
+                    [py_path, "-c", "import demucs, torch"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=3,
+                )
+                if res.returncode == 0:
+                    return True, f"Demucs AI sẵn sàng qua {py_cmd} hệ thống."
+            except Exception:
+                pass
+
+    return False, "Chưa cài đặt thư viện Demucs AI. Vui lòng cài đặt: pip install demucs"
 
 
 def get_optimal_device() -> str:
     """Xác định thiết bị phần cứng tối ưu (Apple Silicon MPS / CUDA GPU / CPU)."""
     try:
         import torch
-        if torch.backends.mps.is_available():
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"
-        if torch.cuda.is_available():
+        if hasattr(torch, "cuda") and torch.cuda.is_available():
             return "cuda"
     except Exception:
         pass
@@ -118,12 +141,25 @@ def separate_audio_stems(
             raise RuntimeError("Người dùng đã hủy tác vụ.")
 
         # Bước 2: Chuẩn bị lệnh Demucs CLI
-        python_bin = sys.executable
         demucs_out_dir = os.path.join(temp_work_dir, "separated")
         os.makedirs(demucs_out_dir, exist_ok=True)
 
-        cmd_demucs = [
-            python_bin, "-m", "demucs",
+        is_frozen = getattr(sys, "frozen", False)
+        demucs_cli = shutil.which("demucs")
+
+        if is_frozen:
+            if demucs_cli:
+                cmd_demucs = [demucs_cli]
+            else:
+                py_bin = shutil.which("python3") or shutil.which("python") or "python"
+                cmd_demucs = [py_bin, "-m", "demucs"]
+        else:
+            if demucs_cli and not os.path.exists(sys.executable):
+                cmd_demucs = [demucs_cli]
+            else:
+                cmd_demucs = [sys.executable, "-m", "demucs"]
+
+        cmd_demucs += [
             "--two-stems=vocals",
             "-n", "htdemucs",
             "-o", demucs_out_dir,
