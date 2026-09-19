@@ -1195,8 +1195,8 @@ class AppWindow(_BaseWindow):
         try:
             text = self.clipboard_get().strip()
             if text:
-                from core.douyin import DouyinDownloader
-                clean_url = DouyinDownloader.extract_url(text)
+                from core.downloader import extract_universal_url
+                clean_url = extract_universal_url(text)
                 self.url_var.set(clean_url if clean_url else text)
         except Exception:
             pass
@@ -1687,8 +1687,8 @@ class AppWindow(_BaseWindow):
         is_url = self.tabview.get().startswith("🌐")
         source = self.url_var.get().strip() if is_url else self.file_path_var.get().strip()
         if is_url and source:
-            from core.douyin import DouyinDownloader
-            clean_url = DouyinDownloader.extract_url(source)
+            from core.downloader import extract_universal_url
+            clean_url = extract_universal_url(source)
             if clean_url:
                 source = clean_url
                 self.url_var.set(clean_url)
@@ -1768,8 +1768,8 @@ class AppWindow(_BaseWindow):
     def _start_download_only(self):
         url = self.url_var.get().strip()
         if url:
-            from core.douyin import DouyinDownloader
-            clean_url = DouyinDownloader.extract_url(url)
+            from core.downloader import extract_universal_url
+            clean_url = extract_universal_url(url)
             if clean_url:
                 url = clean_url
                 self.url_var.set(clean_url)
@@ -1848,8 +1848,8 @@ class AppWindow(_BaseWindow):
         """Tải riêng file âm thanh/nhạc từ link online (Douyin, YouTube, TikTok, Facebook, SoundCloud, Artlist...)."""
         url = self.url_var.get().strip()
         if url:
-            from core.douyin import DouyinDownloader
-            clean_url = DouyinDownloader.extract_url(url)
+            from core.downloader import extract_universal_url
+            clean_url = extract_universal_url(url)
             if clean_url:
                 url = clean_url
                 self.url_var.set(clean_url)
@@ -2020,8 +2020,8 @@ class AppWindow(_BaseWindow):
         """Tải bài nhạc/video từ link online rồi tự động chạy Demucs AI để tách lời và beat."""
         url = self.url_var.get().strip()
         if url:
-            from core.douyin import DouyinDownloader
-            clean_url = DouyinDownloader.extract_url(url)
+            from core.downloader import extract_universal_url
+            clean_url = extract_universal_url(url)
             if clean_url:
                 url = clean_url
                 self.url_var.set(clean_url)
@@ -2143,8 +2143,9 @@ class AppWindow(_BaseWindow):
             return
 
         self._is_processing = True
+        self._download_cancelled = False
         self.btn_start.configure(state="disabled")
-        self.btn_cancel.configure(state="disabled")
+        self.btn_cancel.configure(state="normal")
         if hasattr(self, "btn_extract_audio"):
             self.btn_extract_audio.configure(state="disabled")
         if hasattr(self, "btn_separate_audio"):
@@ -2179,8 +2180,12 @@ class AppWindow(_BaseWindow):
                     audio_format="mp3",
                     bitrate="320k",
                     progress_callback=on_prog,
+                    is_cancelled=lambda: self._download_cancelled,
                 )
                 self.task_queue.put({"type": "audio_extract_success", "file_path": out_audio})
+            except (InterruptedError, KeyboardInterrupt):
+                self.task_queue.put({"type": "log", "message": "⚠️ Tiến trình trích xuất âm thanh đã bị hủy."})
+                self.task_queue.put({"type": "progress", "value": 0.0, "label": "Đã hủy"})
             except Exception as e:
                 self.task_queue.put({"type": "log", "message": f"❌ Lỗi khi trích xuất âm thanh: {e}"})
                 self.task_queue.put({"type": "progress", "value": 0.0, "label": "Thất bại"})
@@ -2191,14 +2196,15 @@ class AppWindow(_BaseWindow):
 
     def _cancel(self):
         if self._is_processing:
-            self.status_label.configure(text="⚠️ Đang gửi yêu cầu hủy...")
-            self.btn_cancel.configure(state="disabled")
             self._download_cancelled = True
             if hasattr(self, "_audio_sep_cancel_event"):
                 self._audio_sep_cancel_event.set()
             self._stop_timer(success=False)
             if self.pipeline:
                 self.pipeline.cancel()
+            self.status_label.configure(text="⚠️ Đang hủy tiến trình...")
+            self._log_msg("⚠️ Đã gửi yêu cầu dừng tiến trình ngay lập tức...")
+            self.btn_cancel.configure(state="disabled")
 
     def _process_queue(self):
         try:

@@ -5,12 +5,50 @@ core/ffmpeg_processor.py — Ghép video cuối cùng: burn subtitle + mix/repla
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Callable, Optional
 
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
 from utils.subtitle_styles import build_ffmpeg_subtitle_style
+
+
+def _run_ffmpeg_cancellable(
+    cmd: list,
+    cwd: Optional[str] = None,
+    is_cancelled: Optional[Callable[[], bool]] = None,
+) -> subprocess.CompletedProcess:
+    """Thực thi lệnh FFmpeg có khả năng hủy ngay lập tức khi nhận cờ is_cancelled."""
+    if is_cancelled and is_cancelled():
+        raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
+
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0x08000000
+
+    p = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+    )
+
+    while p.poll() is None:
+        if is_cancelled and is_cancelled():
+            try:
+                p.kill()
+            except Exception:
+                pass
+            raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
+        time.sleep(0.2)
+
+    stdout, stderr = p.communicate()
+    return subprocess.CompletedProcess(args=cmd, returncode=p.returncode, stdout=stdout, stderr=stderr)
 
 
 def check_has_audio(video_path: str) -> bool:
@@ -90,6 +128,7 @@ class FFmpegProcessor:
         subtitle_margin_v: int = 8,
         subtitles_path: str = "",
         subtitle_style_preset: str = "capcut_yellow",
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ):
         srt_path = srt_path or subtitles_path
         """
@@ -182,13 +221,10 @@ class FFmpegProcessor:
                         "-b:a", "192k",
                         abs_output_path,
                     ]
-                return subprocess.run(
+                return _run_ffmpeg_cancellable(
                     cmd,
                     cwd=temp_dir,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                    is_cancelled=is_cancelled,
                 )
 
             # Chế độ chỉ gắn phụ đề, giữ nguyên âm thanh gốc
@@ -207,13 +243,10 @@ class FFmpegProcessor:
                     "-c:a", "copy",
                     abs_output_path,
                 ]
-                result = subprocess.run(
+                result = _run_ffmpeg_cancellable(
                     cmd,
                     cwd=temp_dir,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                    is_cancelled=is_cancelled,
                 )
                 if result.returncode != 0:
                     self._report(0.4, "Đang re-encode âm thanh chuẩn AAC...")
@@ -231,13 +264,10 @@ class FFmpegProcessor:
                         "-b:a", "192k",
                         abs_output_path,
                     ]
-                    result = subprocess.run(
+                    result = _run_ffmpeg_cancellable(
                         cmd_fallback,
                         cwd=temp_dir,
-                        capture_output=True,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
+                        is_cancelled=is_cancelled,
                     )
 
                 if result.returncode != 0:
@@ -282,6 +312,7 @@ def extract_audio(
     audio_format: str = "mp3",
     bitrate: str = "320k",
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    is_cancelled: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Trích xuất âm thanh từ file video sang file audio (MP3 320kbps / M4A / WAV).
@@ -324,12 +355,10 @@ def extract_audio(
     if progress_callback:
         progress_callback(0.3, "Đang bóc tách luồng âm thanh...")
 
-    res = subprocess.run(
+    res = _run_ffmpeg_cancellable(
         cmd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        cwd=output_dir,
+        is_cancelled=is_cancelled,
     )
 
     if res.returncode != 0:

@@ -115,15 +115,24 @@ class TTSGenerator:
     def _prepare_text_for_edge_tts(self, text: str) -> str:
         """
         Chuẩn hóa văn bản tương thích 100% với Microsoft Edge-TTS:
-        - Chuyển dấu ba chấm ('...', '…') thành dấu chấm '.' (Edge-TTS ngắt kết nối WebSocket nếu gặp dấu ba chấm).
+        - Giữ tone giọng ổn định, chuẩn phong thái thuyết minh/phát thanh viên.
+        - Chuyển dấu ba chấm ('...', '…') thành dấu chấm '.' (tránh ngắt kết nối WebSocket).
+        - Chuyển đổi dấu cảm thán '!' thành dấu chấm '.' để triệt tiêu hiện tượng vút tone/thét cao độ thất thường.
         - Loại bỏ các dấu kết thúc dở dang ở cuối câu: dấu phẩy ',', gạch ngang '-', hai chấm ':', chấm phẩy ';'
           (tránh Edge-TTS báo lỗi 'No audio was received' do cụm từ chưa kết thúc SSML).
+        - Bảo đảm câu luôn kết thúc bằng dấu câu hợp lệ (. hoặc ?) để Edge-TTS phát âm ổn định dải tần.
         """
         if not text:
             return ""
-        t = text.replace("...", ".").replace("…", ".")
+        import re
+        t = text.replace("...", ".").replace("…", ".").replace("~", ".")
+        # Triệt tiêu các dấu cảm thán ! thành dấu chấm . để giữ âm lượng và tone giọng đều đặn
+        t = re.sub(r"[!]+", ".", t)
         # Loại bỏ các ký tự dấu câu dở dang ở cuối câu
         t = t.rstrip(" ,;:-")
+        # Bảo đảm câu kết thúc bằng dấu ngắt câu chuẩn
+        if t and t[-1] not in (".", "?"):
+            t += "."
         return " ".join(t.split()).strip()
 
     async def _generate_single_edge_tts(
@@ -175,7 +184,7 @@ class TTSGenerator:
             # Nếu thử lại từ lần 3 trở đi, làm sạch sâu hơn và dùng tham số chuẩn
             if attempt >= 3:
                 import re
-                current_text = re.sub(r'[^\w\s.,!?-]', '', clean_edge_text).strip()
+                current_text = re.sub(r'[^\w\s.,?]', '', clean_edge_text).strip()
                 current_text = self._prepare_text_for_edge_tts(current_text) or clean_edge_text
                 current_rate = "+0%"
                 current_pitch = "+0Hz"
@@ -186,8 +195,8 @@ class TTSGenerator:
                     voice=voice_name,
                     rate=current_rate,
                     pitch=current_pitch,
-                    connect_timeout=10,
-                    receive_timeout=20,
+                    connect_timeout=12,
+                    receive_timeout=25,
                 )
                 await communicate.save(out_path)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
@@ -208,8 +217,8 @@ class TTSGenerator:
                     self._log(f"   ❌ Giọng {voice_name} không phản hồi sau {max_attempts} lần thử.")
                     return False
 
-                # Tăng dần thời gian chờ: 0.6s -> 0.9s -> 1.2s -> ... tối đa 2.5s
-                wait_sec = min(0.6 + 0.3 * min(attempt, 5), 2.5)
+                # Tăng dần thời gian chờ: 0.8s -> 1.2s -> 1.6s -> ... tối đa 3.0s để WebSocket hồi phục
+                wait_sec = min(0.8 + 0.4 * min(attempt, 5), 3.0)
                 err_str = str(e)
                 if "No audio was received" in err_str:
                     err_hint = "Máy chủ Microsoft ngắt kết nối tạm thời"
@@ -445,44 +454,45 @@ class TTSGenerator:
                     # Nghỉ 350ms giữa các câu để chống Microsoft WebSocket connection reset/rate limit
                     await asyncio.sleep(0.35)
 
-            # Điều chỉnh tốc độ thông minh & Chống đè tiếng tuyệt đối (Anti-overlap Protection)
+            # Điều chỉnh tốc độ thông minh & Bảo toàn tone giọng phát thanh viên (Tempo Smoothing)
             adjusted_seg_paths = []
             for i, (seg, seg_path) in enumerate(seg_paths):
                 # Xác định thời gian tối đa được phép phát trước khi câu tiếp theo bắt đầu
                 if i + 1 < len(seg_paths):
                     next_start_ms = seg_paths[i + 1][0].start_ms
-                    # Chừa tối thiểu 60ms nghỉ trước khi câu sau phát
-                    max_allowed_ms = max(next_start_ms - seg.start_ms - 60, 400)
+                    # Chừa khoảng đệm tự nhiên (lead-out buffer 120ms) để câu đọc tròn vành rõ chữ
+                    gap_ms = next_start_ms - seg.start_ms
+                    max_allowed_ms = max(gap_ms + 120, 600)
                 else:
-                    seg_dur_ms = max(seg.end_ms - seg.start_ms, 600)
-                    max_allowed_ms = max(seg_dur_ms, int(total_duration_sec * 1000) - seg.start_ms - 60)
+                    seg_dur_ms = max(seg.end_ms - seg.start_ms, 800)
+                    max_allowed_ms = max(seg_dur_ms + 200, int(total_duration_sec * 1000) - seg.start_ms)
 
                 tts_dur_ms = self._get_audio_duration_ms(seg_path)
                 if tts_dur_ms > max_allowed_ms:
                     raw_speed = tts_dur_ms / max_allowed_ms
-                    # Tăng tốc độ linh hoạt tối đa lên 1.75x để bảo toàn trọn vẹn ngữ nghĩa câu nói
-                    speed = min(max(raw_speed, 1.05), 1.75)
+                    # KHỐNG CHẾ TRẦN TỐC ĐỘ TỐI ĐA 1.20x ĐỂ GIỮ TONE GIỌNG CHUẨN XUYÊN SUỐT:
+                    # Ngưỡng 1.03x - 1.20x giữ trọn vẹn chất giọng tự nhiên, tuyệt đối không bị the thé hay đổi tone
+                    speed = min(max(raw_speed, 1.03), 1.20)
                     adjusted_path = seg_path.replace(".mp3", "_adj.mp3")
                     new_dur_ms = tts_dur_ms / speed
 
-                    # Nếu sau khi tăng tốc, thời lượng câu chỉ lệch nhẹ (< 200ms),
-                    # KHÔNG dùng cờ -t để tránh nuốt chữ/chặt đứt đuôi câu của nhân vật
-                    if new_dur_ms <= max_allowed_ms + 200:
-                        filter_str = f"atempo={speed:.3f}"
-                        cmd = [
-                            ffmpeg, "-y", "-i", seg_path,
-                            "-filter:a", filter_str,
-                            "-c:a", "libmp3lame", "-q:a", "2",
-                            adjusted_path,
-                        ]
-                    else:
-                        max_sec = (max_allowed_ms + 150) / 1000.0
-                        fade_st = max(0.0, max_sec - 0.08)
-                        filter_str = f"atempo={speed:.3f},afade=t=out:st={fade_st:.3f}:d=0.08"
+                    filter_str = f"atempo={speed:.3f}"
+                    # Nếu sau khi điều chỉnh tốc độ vẫn còn dài hơn khoảng đệm quá 250ms, fade out nhẹ ở đuôi
+                    if new_dur_ms > max_allowed_ms + 250 and i + 1 < len(seg_paths):
+                        max_sec = (max_allowed_ms + 200) / 1000.0
+                        fade_st = max(0.0, max_sec - 0.10)
+                        filter_str = f"atempo={speed:.3f},afade=t=out:st={fade_st:.3f}:d=0.10"
                         cmd = [
                             ffmpeg, "-y", "-i", seg_path,
                             "-filter:a", filter_str,
                             "-t", f"{max_sec:.3f}",
+                            "-c:a", "libmp3lame", "-q:a", "2",
+                            adjusted_path,
+                        ]
+                    else:
+                        cmd = [
+                            ffmpeg, "-y", "-i", seg_path,
+                            "-filter:a", filter_str,
                             "-c:a", "libmp3lame", "-q:a", "2",
                             adjusted_path,
                         ]
@@ -541,6 +551,7 @@ class TTSGenerator:
 
         if len(seg_paths) <= batch_size:
             self._run_amix_combine(ffmpeg, seg_paths, total_duration_sec, output_path)
+            self._master_audio_track(ffmpeg, output_path, total_duration_sec)
             return
 
         batch_files = []
@@ -570,6 +581,9 @@ class TTSGenerator:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg lỗi khi merge audio batches:\n{result.stderr[-800:]}")
+
+        # Chuẩn hóa âm học phát thanh viên EBU R128 cho toàn bộ track âm thanh
+        self._master_audio_track(ffmpeg, output_path, total_duration_sec)
 
     def _run_amix_combine(
         self,
@@ -609,3 +623,30 @@ class TTSGenerator:
             raise RuntimeError(
                 f"FFmpeg lỗi khi ghép audio:\n{result.stderr[-800:]}"
             )
+
+    def _master_audio_track(self, ffmpeg: str, audio_path: str, total_duration_sec: float):
+        """
+        Chuẩn hóa âm học giọng đọc phát thanh viên EBU R128 & Dynamic Range Compression.
+        Đảm bảo toàn bộ bài đọc từ đầu đến cuối có âm lượng, độ dày và âm sắc đồng nhất 100%.
+        """
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            return
+        mastered_tmp = audio_path.replace(".mp3", "_mastered.mp3")
+        # -16 LUFS là chuẩn quốc tế cho podcast/giọng đọc lồng tiếng; acompressor nén nhẹ dải động để các âm cao và âm thấp nghe đều đặn
+        filter_str = "loudnorm=I=-16:TP=-1.5:LRA=7,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=100"
+        cmd = [
+            ffmpeg, "-y",
+            "-i", audio_path,
+            "-af", filter_str,
+            "-t", str(total_duration_sec),
+            "-c:a", "libmp3lame",
+            "-q:a", "2",
+            mastered_tmp,
+        ]
+        res = subprocess.run(cmd, capture_output=True, check=False)
+        if res.returncode == 0 and os.path.exists(mastered_tmp) and os.path.getsize(mastered_tmp) > 0:
+            try:
+                shutil.move(mastered_tmp, audio_path)
+                self._log("🎚️ Đã chuẩn hóa âm học phát thanh viên EBU R128 (âm sắc dày ấm, âm lượng đồng đều).")
+            except Exception:
+                pass

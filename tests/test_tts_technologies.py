@@ -49,10 +49,10 @@ def test_edge_tts_text_preparation():
     """Kiểm tra chuẩn hóa văn bản riêng cho Microsoft Edge-TTS để chống lỗi No audio received."""
     gen = TTSGenerator()
 
-    # Dấu phẩy ở cuối câu (do nối câu giữa chừng) phải được rstrip để tránh ngắt WebSocket SSML
-    assert gen._prepare_text_for_edge_tts("Xin chào các bạn,") == "Xin chào các bạn"
-    assert gen._prepare_text_for_edge_tts("Tôi đang nói thì -") == "Tôi đang nói thì"
-    assert gen._prepare_text_for_edge_tts("Chi tiết là:") == "Chi tiết là"
+    # Dấu phẩy ở cuối câu (do nối câu giữa chừng) phải được rstrip và chuẩn hóa dấu chấm để tránh ngắt WebSocket SSML và giữ tone đều
+    assert gen._prepare_text_for_edge_tts("Xin chào các bạn,") == "Xin chào các bạn."
+    assert gen._prepare_text_for_edge_tts("Tôi đang nói thì -") == "Tôi đang nói thì."
+    assert gen._prepare_text_for_edge_tts("Chi tiết là:") == "Chi tiết là."
 
     # Dấu ba chấm '...' và '…' phải được chuyển thành dấu chấm '.' để không bị server Microsoft đóng stream rỗng
     assert gen._prepare_text_for_edge_tts("Không thể nào...") == "Không thể nào."

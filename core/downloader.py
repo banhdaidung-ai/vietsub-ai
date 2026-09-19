@@ -13,6 +13,34 @@ import yt_dlp
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
 
 
+def extract_universal_url(text: str) -> Optional[str]:
+    """
+    Trích xuất đường dẫn URL (HTTP / HTTPS) hợp lệ từ chuỗi văn bản người dùng dán vào,
+    xử lý các trường hợp người dùng copy kèm tiêu đề hoặc văn bản chia sẻ từ TikTok, Douyin, YouTube, Facebook...
+    """
+    if not text:
+        return None
+    text_clean = text.strip()
+    m = re.search(r"https?://[^\s\"'<>]+", text_clean)
+    if m:
+        url = m.group(0).rstrip(".,;:!?)>]\"'")
+        return url
+    return None
+
+
+def _ensure_ffmpeg_in_path():
+    """Đảm bảo thư mục chứa binary ffmpeg và ffprobe được đưa vào os.environ['PATH']."""
+    try:
+        ffmpeg_path = get_ffmpeg_path()
+        if ffmpeg_path:
+            p_dir = str(Path(ffmpeg_path).resolve().parent)
+            current_path = os.environ.get("PATH", "")
+            if p_dir not in current_path:
+                os.environ["PATH"] = p_dir + os.pathsep + current_path
+    except Exception:
+        pass
+
+
 class VideoDownloader:
     def __init__(
         self,
@@ -36,6 +64,11 @@ class VideoDownloader:
         self._downloaded_path = None
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         url_clean = url.strip()
+
+        _ensure_ffmpeg_in_path()
+        clean_extracted = extract_universal_url(url_clean)
+        if clean_extracted:
+            url_clean = clean_extracted
 
         # ── HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) không watermark ──
         from core.douyin import DouyinDownloader
@@ -89,6 +122,9 @@ class VideoDownloader:
             "format": format_str,
             "merge_output_format": "mp4",
             "outtmpl": str(Path(output_dir) / "%(title).100s.%(ext)s"),
+            "windowsfilenames": True,
+            "nocheckcertificate": True,
+            "restrictfilenames": False,
             "progress_hooks": [progress_hook],
             "noplaylist": True,
             "quiet": True,
@@ -478,9 +514,17 @@ class VideoDownloader:
             }
         ]
 
+        _ensure_ffmpeg_in_path()
+        clean_extracted = extract_universal_url(url_clean)
+        if clean_extracted:
+            url_clean = clean_extracted
+
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": str(Path(output_dir) / "%(title).100s.%(ext)s"),
+            "windowsfilenames": True,
+            "nocheckcertificate": True,
+            "restrictfilenames": False,
             "progress_hooks": [progress_hook],
             "noplaylist": True,
             "quiet": True,

@@ -47,30 +47,58 @@ def _fmt_size(path: str) -> str:
 def _open_file(path: str) -> None:
     """Mở file bằng ứng dụng mặc định của hệ điều hành."""
     try:
+        if not path:
+            return
+        p = Path(path).resolve()
         if sys.platform == "darwin":
-            subprocess.Popen(["open", path])
+            subprocess.Popen(["open", str(p)])
         elif sys.platform == "win32":
-            os.startfile(path)
+            os.startfile(os.path.normpath(str(p)))
         else:
-            subprocess.Popen(["xdg-open", path])
+            subprocess.Popen(["xdg-open", str(p)])
     except Exception:
         pass
 
 
 def _reveal_file(path: str) -> None:
-    """Mở thư mục chứa file và highlight đúng file đó."""
+    """Mở thư mục chứa file và highlight đúng file đó, hoặc mở thư mục nếu là folder."""
     try:
+        if not path:
+            return
+        p = Path(path).resolve()
         if sys.platform == "darwin":
-            # -R: reveal — mở Finder và bôi đen đúng file
-            subprocess.Popen(["open", "-R", path])
+            if p.is_file():
+                subprocess.Popen(["open", "-R", str(p)])
+            elif p.is_dir():
+                subprocess.Popen(["open", str(p)])
+            elif p.parent.exists():
+                subprocess.Popen(["open", str(p.parent)])
         elif sys.platform == "win32":
-            # /select, highlight đúng file trong Explorer
-            subprocess.Popen(["explorer", f"/select,{path}"])
+            norm = os.path.normpath(str(p))
+            if p.is_file():
+                try:
+                    subprocess.Popen(f'explorer /select,"{norm}"')
+                except Exception:
+                    os.startfile(os.path.normpath(str(p.parent)))
+            elif p.is_dir():
+                os.startfile(norm)
+            elif p.parent.exists():
+                os.startfile(os.path.normpath(str(p.parent)))
         else:
-            # Linux: mở thư mục chứa file
-            subprocess.Popen(["xdg-open", str(Path(path).parent)])
+            folder = str(p) if p.is_dir() else str(p.parent)
+            subprocess.Popen(["xdg-open", folder])
     except Exception:
-        pass
+        try:
+            p_parent = Path(path).resolve().parent
+            if p_parent.exists():
+                if sys.platform == "win32":
+                    os.startfile(os.path.normpath(str(p_parent)))
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", str(p_parent)])
+                else:
+                    subprocess.Popen(["xdg-open", str(p_parent)])
+        except Exception:
+            pass
 
 
 def _play_system_sound() -> None:
@@ -315,18 +343,76 @@ class CompletionDialog(ctk.CTkToplevel):
 
         return rows
 
+    def _find_active_path(self) -> Optional[str]:
+        """Dò tìm file hoặc thư mục đích khả dụng nhất để mở."""
+        # 1. Thử file video chính
+        if self._video_path and os.path.exists(self._video_path):
+            return self._video_path
+
+        # 2. Thử file srt hoặc txt
+        for candidate in (self._srt_path, self._txt_path):
+            if candidate and os.path.exists(candidate):
+                return candidate
+
+        # 3. Thử tìm từ các dòng thông tin custom_rows
+        if self._custom_rows:
+            for row in self._custom_rows:
+                if len(row) >= 3:
+                    val = str(row[2]).strip()
+                    clean_val = val.split("  (")[0].strip()
+                    if os.path.exists(val):
+                        return val
+                    if os.path.exists(clean_val):
+                        return clean_val
+
+        # 4. Thử thư mục lưu trong custom_rows
+        if self._custom_rows:
+            for row in self._custom_rows:
+                if len(row) >= 3 and any(k in row[1] for k in ("Lưu tại:", "Thư mục", "Thư mục lưu:")):
+                    folder = str(row[2]).strip()
+                    if os.path.exists(folder):
+                        return folder
+
+        # 5. Thử thư mục cha của _video_path
+        if self._video_path:
+            p_dir = str(Path(self._video_path).parent)
+            if os.path.exists(p_dir):
+                return p_dir
+
+        # 6. Fallback từ master window nếu có
+        if hasattr(self.master, "_resolve_output_dir"):
+            try:
+                out = self.master._resolve_output_dir()
+                if out and os.path.exists(out):
+                    return out
+            except Exception:
+                pass
+
+        if hasattr(self.master, "config"):
+            try:
+                from utils.helpers import get_output_dir
+                out = get_output_dir(self.master.config)
+                if out and os.path.exists(out):
+                    return out
+            except Exception:
+                pass
+
+        return None
+
     # ─── Button handlers ─────────────────────────────────────────────────────
 
     def _on_open_file(self):
-        """Mở file video bằng ứng dụng mặc định."""
-        if self._video_path and os.path.exists(self._video_path):
-            _open_file(self._video_path)
+        """Mở file hoặc thư mục bằng ứng dụng mặc định."""
+        target = self._find_active_path()
+        if target:
+            _open_file(target)
         self.destroy()
 
     def _on_reveal_file(self):
-        """Mở Finder/Explorer và bôi đen đúng file vừa xuất."""
-        if self._video_path and os.path.exists(self._video_path):
-            _reveal_file(self._video_path)
+        """Mở Finder/Explorer và bôi đen đúng file vừa xuất (hoặc mở thư mục lưu)."""
+        target = self._find_active_path()
+        if target:
+            _reveal_file(target)
         self.destroy()
 
     def _on_back(self):

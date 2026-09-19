@@ -149,7 +149,12 @@ class Pipeline:
             preferred_model=config.get("gemini_model", "auto"),
             progress_callback=self._make_progress_cb(0.10, 0.50),
         )
-        raw_srt = gemini.process_video(video_path, source_lang=source_lang, target_lang=target_lang)
+        raw_srt = gemini.process_video(
+            video_path,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            is_cancelled=lambda: self._cancelled,
+        )
         srt_content = normalize_srt_content(raw_srt)
 
         # Lưu SRT tạm
@@ -297,6 +302,7 @@ class Pipeline:
             subtitle_font_size=int(config.get("subtitle_font_size", 10)),
             subtitle_margin_v=int(config.get("subtitle_margin_v", 8)),
             subtitle_style_preset=config.get("subtitle_style_preset", "capcut_yellow"),
+            is_cancelled=lambda: self._cancelled,
         )
 
         self._progress(1.0, "Hoàn tất!")

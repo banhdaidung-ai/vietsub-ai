@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import urllib.parse
@@ -212,11 +213,12 @@ class DouyinDownloader:
 
     @classmethod
     def clean_title(cls, title: str, aweme_id: str) -> str:
-        """Làm sạch tiêu đề video để đặt tên file an toàn."""
+        """Làm sạch tiêu đề video để đặt tên file an toàn trên Windows và macOS."""
         clean = re.sub(r'[\\/*?:"<>|#\n\r\t]', " ", title or "").strip()
         clean = re.sub(r"\s+", " ", clean).strip()
+        clean = clean.strip(". ")
         if len(clean) > 80:
-            clean = clean[:80].strip()
+            clean = clean[:80].strip(". ")
         if not clean:
             clean = f"douyin_{aweme_id}"
         return clean
@@ -396,7 +398,17 @@ class DouyinDownloader:
 
                 # Kiểm tra dung lượng file đã tải
                 if tmp_file.exists() and tmp_file.stat().st_size > 50000:
-                    tmp_file.rename(out_file)
+                    for _attempt in range(5):
+                        try:
+                            if out_file.exists():
+                                out_file.unlink()
+                            shutil.move(str(tmp_file), str(out_file))
+                            break
+                        except Exception:
+                            time.sleep(0.2)
+                    else:
+                        tmp_file.replace(out_file)
+
                     if progress_callback:
                         progress_callback(1.0, f"Đã tải xong: {out_file.name}")
                     return str(out_file)

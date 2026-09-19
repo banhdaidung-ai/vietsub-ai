@@ -18,6 +18,17 @@ if sys.stderr is None:
     except Exception:
         pass
 
+# Cấu hình chứng chỉ SSL (certifi) cho Windows và frozen bundles để tải mạng không bị lỗi CERTIFICATE_VERIFY_FAILED
+try:
+    import certifi
+    ca_bundle = certifi.where()
+    if ca_bundle and os.path.exists(ca_bundle):
+        os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+        os.environ.setdefault("CURL_CA_BUNDLE", ca_bundle)
+except Exception:
+    pass
+
 # Kiểm tra nếu đang chạy bằng Python cũ của macOS (Tk 8.5 gây lỗi màn hình trắng trong CustomTkinter)
 # Tự động chuyển hướng sang môi trường Python hiện đại trong .venv (Tk 9.0)
 if not getattr(sys, "frozen", False):

@@ -18,17 +18,17 @@ PROMPT_TRANSLATE_ZH_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề 
 
 NHIỆM VỤ: Nghe tất cả lời thoại tiếng Trung trong video này và dịch sang phụ đề tiếng Việt chính xác, tự nhiên 100% theo định dạng SRT.
 
-YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM:
+YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG CHUẨN MỰC:
 - Dịch sang tiếng Việt tự nhiên, linh hoạt, chuẩn văn phong đời sống hoặc bối cảnh phim ảnh — tuyệt đối không dịch máy tính word-by-word khô cứng.
 - KHẨU NGỮ LỒNG TIẾNG CÓ HỒN: Bản dịch phải mang tính khẩu ngữ sinh động của người Việt, dùng từ ngữ khí tự nhiên theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả...).
-- NGỮ ĐIỆU & DẤU CÂU BIỂU CẢM (QUAN TRỌNG ĐỂ AI ĐỌC TRUYỀN CẢM):
-  * Dùng dấu chấm lửng "..." khi nhân vật ngập ngừng, xúc động hoặc ngắt nghỉ giữa chừng.
-  * Dùng dấu chấm than "!" cho câu hào hứng, giận dữ, dồn dập, cảm thán.
-  * Dùng dấu chấm hỏi "?" để giọng đọc tự động lên giọng ở cuối câu.
+- NGỮ ĐIỆU & DẤU CÂU ỔN ĐỊNH (CỰC KỲ QUAN TRỌNG ĐỂ GIỌNG ĐỌC AI ĐỀU ĐẶN & KHÔNG NHẢY TONE):
+  * Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, trầm ấm và ổn định xuyên suốt toàn bộ video.
+  * HẠN CHẾ LẠM DỤNG dấu chấm than (!) và dấu ba chấm (...). Các câu trần thuật thông thường BẮT BUỘC kết thúc bằng dấu chấm (.) để giọng đọc AI không bị giật cục hay the thé bất thường.
+  * Chỉ dùng dấu chấm hỏi (?) cho câu hỏi thực sự.
 - Nếu là bài hát / ca từ tiếng Trung: Dịch mượt mà, bay bổng đúng ý nghĩa ca từ và giai điệu.
 - Tách bạch giọng nói khỏi tiếng nhạc nền (BGM) và hiệu ứng âm thanh (SFX) để bắt trọn từng câu thoại.
 - Giữ nguyên tên người, địa danh (dùng phiên âm Hán Việt hoặc tên thông dụng quen thuộc).
-- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, tương đương độ dài và nhịp điệu của câu nói gốc trong video để khi lồng tiếng không bị quá nhanh hay dồn chữ.
+- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, độ dài số từ tương đương thời lượng câu nói gốc để khi lồng tiếng không bị quá nhanh, dồn chữ hay méo giọng.
 - Bao gồm TẤT CẢ lời thoại, không bỏ sót câu nào.
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng.
 - Timestamp phải khớp chính xác với thời điểm nói trong video.
@@ -66,11 +66,10 @@ YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM (CỰC KỲ QUAN TRỌ
 3. VĂN PHONG KHẨU NGỮ TỰ NHIÊN & DẤU CÂU BIỂU CẢM:
 - Dịch thoát ý theo khẩu ngữ giao tiếp sinh động của người Việt, dùng trợ từ ngữ khí tự nhiên theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả, nào...).
 - Dịch chuẩn các thành ngữ (idioms), tiếng lóng (slang), khẩu ngữ giao tiếp đời thường.
-- NGỮ ĐIỆU & DẤU CÂU (QUAN TRỌNG ĐỂ GIỌNG ĐỌC AI TRUYỀN CẢM):
-  * Dùng dấu chấm lửng "..." khi ngập ngừng, xúc động hoặc câu bị ngắt quãng.
-  * Dùng dấu chấm than "!" cho câu hào hứng, giận dữ, cảm thán, dồn dập.
-  * Dùng dấu chấm hỏi "?" để giọng đọc tự động lên giọng ở cuối câu hỏi.
-  * Dùng dấu phẩy "," đúng nhịp ngắt nghỉ để AI giữ hơi thở tự nhiên.
+- NGỮ ĐIỆU & DẤU CÂU ỔN ĐỊNH (CỰC KỲ QUAN TRỌNG ĐỂ GIỌNG ĐỌC AI ĐỀU ĐẶN & KHÔNG NHẢY TONE):
+  * Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, đầm ấm và ổn định xuyên suốt toàn bộ video.
+  * HẠN CHẾ LẠM DỤNG dấu chấm than (!) và dấu ba chấm (...). Các câu trần thuật thông thường BẮT BUỘC kết thúc bằng dấu chấm (.) để giọng đọc AI giữ cao độ chuẩn, không bị giật cục hay the thé bất thường.
+  * Dùng dấu phẩy (,) đúng nhịp ngắt nghỉ để câu văn tự nhiên; chỉ dùng dấu chấm hỏi (?) khi là câu hỏi thực sự.
 
 4. TỐC ĐỘ & ĐỘ DÀI:
 - Câu dịch cần súc tích, cô đọng, độ dài số từ tương xứng với thời lượng nói của câu gốc trong video để khi lồng tiếng không bị quá nhanh hoặc dồn dập chữ.
@@ -148,8 +147,9 @@ QUY TRÌNH & YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM:
 - Lắng nghe trọn vẹn và GỘP các cụm từ ngắn dở dang thành CÂU HOÀN CHỈNH có đầy đủ ý nghĩa (thời lượng mỗi phân đoạn lý tưởng từ 2.0s đến 5.0s).
 - TUYỆT ĐỐI KHÔNG ngắt vụn từng từ hay nửa câu dưới 1.5 giây để phụ đề dễ đọc và giọng đọc AI có đủ thời gian phát âm trọn vẹn, không bị nuốt chữ.
 
-3. KHẨU NGỮ SINH ĐỘNG & DẤU CÂU BIỂU CẢM:
-- Sử dụng dấu câu biểu cảm thông minh: "..." khi ngập ngừng, "!" khi cảm thán/cao trào, "?" để lên giọng hỏi, dấu phẩy "," ngắt nhịp thở tự nhiên.
+3. KHẨU NGỮ TỰ NHIÊN & DẤU CÂU ỔN ĐỊNH (CHUẨN LỒNG TIẾNG PHÁT THANH VIÊN):
+- Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, đầm ấm và ổn định xuyên suốt toàn bộ video.
+- HẠN CHẾ LẠM DỤNG dấu chấm than (!) và dấu ba chấm (...). Các câu trần thuật thông thường BẮT BUỘC kết thúc bằng dấu chấm (.) để giọng đọc AI giữ cao độ chuẩn, không bị giật cục hay the thé bất thường.
 - Dùng từ ngữ khí sinh động của người Việt (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả...).
 - Giữ nguyên tên người, địa danh, thương hiệu quen thuộc.
 
@@ -303,6 +303,7 @@ class GeminiProcessor:
         video_path: str,
         source_lang: str = "zh",
         target_lang: str = "vi",
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> str:
         """
         Upload video lên Gemini, phiên âm/dịch theo source_lang → target_lang.
@@ -310,6 +311,9 @@ class GeminiProcessor:
           target_lang:  "vi" (Tiếng Việt) | "en" (Tiếng Anh)
         Trả về nội dung SRT theo target_lang.
         """
+        if is_cancelled and is_cancelled():
+            raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
+
         # Tra cứu prompt theo (source, target); fallback về auto → vi
         prompt = PROMPTS.get(
             (source_lang, target_lang),
@@ -349,9 +353,12 @@ class GeminiProcessor:
                 shutil.copy2(video_path, clean_temp_file)
             upload_target = clean_temp_file
 
+        video_file = None
         try:
             # Bước 1: Upload file lên Gemini File API
             self._report(0.05, "Đang upload video lên Gemini AI...")
+            if is_cancelled and is_cancelled():
+                raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
             try:
                 video_file = self.client.files.upload(
                     file=upload_target,
@@ -368,11 +375,19 @@ class GeminiProcessor:
             # Bước 2: Chờ Gemini xử lý xong (PROCESSING → ACTIVE)
             waited = 0
             while True:
+                if is_cancelled and is_cancelled():
+                    raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
+
                 state_name = getattr(video_file.state, "name", str(video_file.state))
                 if state_name != "PROCESSING":
                     break
 
-                time.sleep(5)
+                # Ngủ từng nhịp 0.5s để phát hiện hủy ngay lập tức
+                for _ in range(10):
+                    if is_cancelled and is_cancelled():
+                        raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
+                    time.sleep(0.5)
+
                 waited += 5
                 self._report(
                     min(0.48, 0.25 + (waited / 120) * 0.23),
@@ -517,8 +532,12 @@ class GeminiProcessor:
                     "  • Video quá ngắn (< 1 giây)"
                 )
 
-            return srt_content
         finally:
+            if video_file:
+                try:
+                    self.client.files.delete(name=video_file.name)
+                except Exception:
+                    pass
             if clean_temp_file and os.path.exists(clean_temp_file):
                 try:
                     os.remove(clean_temp_file)
