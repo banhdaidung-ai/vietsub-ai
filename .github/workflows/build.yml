@@ -153,17 +153,16 @@ jobs:
 
             Phiên bản v1.0.9 nâng cấp lớn về tính ổn định tách nhạc/lời, tối ưu dung lượng bộ cài đặt và hoàn thiện âm thanh AI:
 
+            - **🎙️ Tối Ưu Giọng Đọc Subviet Tự Nhiên & 100% Đầy Đủ Câu Từ:**
+              - Nhận diện vế câu nối tiếp thông minh (`is_clause_continuation`), giữ tone giọng phát thanh viên liền mạch, không bị nhảy tone hay tụt cao độ bừa bãi.
+              - Thuật toán Non-Colliding Ripple Timeline Scheduler: 100% câu từ được lồng tiếng đầy đủ, tuyệt đối không bị nuốt chữ hay cắt cụt âm thanh.
+              - Dự phòng 4 tầng (Edge-TTS 6 retries -> Gemini TTS -> macOS Linh -> Silence), chống rớt mạng hoàn hảo.
             - **🧠 Tích Hợp Demucs Python API Nội Bộ (Frozen Builds):**
               - Chuyển hoàn toàn từ gọi CLI subprocess sang gọi trực tiếp Python API `demucs.separate.main()` trong bản đóng gói.
               - Khắc phục triệt để lỗi "không tìm thấy lệnh demucs" khi chạy từ file .app / .exe.
               - Tự động fallback MPS → CPU nếu phần cứng GPU không hỗ trợ toán tử.
             - **📦 Tối Ưu Dung Lượng Cài Đặt Siêu Nhẹ (Giảm ~70%):**
               - Tinh chỉnh sâu PyInstaller, loại bỏ triệt để hàng trăm MB thư viện thừa (torch testing, inductor, dynamo, protoc, .dist-info, __pycache__).
-              - Giảm dung lượng file cài đặt macOS `.dmg` từ **282MB xuống còn ~80MB**.
-              - Giảm dung lượng file nén Windows `.zip` từ **228MB xuống còn ~80MB**.
-            - **🗣️ Khắc Phục Triệt Để Giọng Thoại Câu Được Câu Mất (TTS):**
-              - Retry Edge-TTS 5 lần với exponential backoff, bù đắp khoảng lặng giữ nguyên timeline.
-              - Dự phòng thông minh Gemini ➔ Edge-TTS từng câu đơn lẻ.
             - **🎯 Kéo Thả Tệp (Drag & Drop) trực tiếp từ Finder / File Explorer.**
             - **⚡ Khởi Động Tức Thì** với Lazy-Loading toàn bộ module nặng (0.08s).
             - **🎬 Đầy Đủ Preset Phụ Đề CapCut, Tách Lời & Nhạc Beat, Tải Video Douyin 1080p.**

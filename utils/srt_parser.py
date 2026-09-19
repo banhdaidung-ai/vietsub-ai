@@ -4,7 +4,7 @@ utils/srt_parser.py — Parse và xử lý file phụ đề SRT
 
 import re
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -247,4 +247,54 @@ def segments_to_srt(segments: List[SRTSegment]) -> str:
         if text:
             blocks.append(f"{idx}\n{start_ts} --> {end_ts}\n{text}")
     return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def is_clause_continuation(current_text: str, next_text: Optional[str] = None, gap_ms: int = 0) -> bool:
+    """
+    Xác định xem phân đoạn hiện tại có phải là một vế câu còn tiếp diễn hay không:
+    - Nếu khoảng cách tới câu tiếp theo quá dài (> 650ms), coi như nhịp ngắt hoàn chỉnh.
+    - Nếu kết thúc bằng dấu phẩy (,), gạch nối (-), hai chấm (:), chấm phẩy (;) -> chắc chắn còn tiếp diễn.
+    - Nếu câu hiện tại không có dấu kết thúc câu (. ! ?) và câu sau bắt đầu bằng chữ thường hoặc khoảng cách gần (< 500ms).
+    - Nếu câu sau bắt đầu bằng các liên từ chuyển tiếp (mà, thì, là, và, nhưng, bởi vì, nên, do đó...).
+    """
+    if not current_text:
+        return False
+    t = current_text.strip()
+    if not t:
+        return False
+
+    # Nếu khoảng cách giữa 2 câu quá 650ms thì là nhịp ngắt tự nhiên
+    if gap_ms > 650:
+        return False
+
+    # Các dấu hiệu kết thúc rõ ràng
+    if t.endswith((".", "!", "?", "…")):
+        return False
+
+    # Dấu hiệu còn tiếp diễn rõ ràng
+    if t.endswith((",", ";", ":", "-", "–", "—")):
+        return True
+
+    # Nếu không có câu tiếp theo thì không phải continuation
+    if not next_text:
+        return False
+
+    nt = next_text.strip()
+    if not nt:
+        return False
+
+    # Nếu câu sau bắt đầu bằng chữ thường (vd: "thì chúng ta...", "và sau đó...")
+    first_char = nt[0]
+    if first_char.islower():
+        return True
+
+    # Các từ liên từ nối tiếp phổ biến ở đầu câu sau
+    first_word = nt.split()[0].lower().rstrip(",;:.") if nt.split() else ""
+    continuation_words = {"và", "nhưng", "mà", "thì", "là", "hoặc", "hay", "nên", "cho", "để", "vì", "bởi", "do", "khi", "nếu"}
+    if first_word in continuation_words and gap_ms < 500:
+        return True
+
+    # Mặc định nếu gap ngắn (< 450ms) và không có dấu chấm ở cuối thì giữ continuation
+    return gap_ms < 450
+
 

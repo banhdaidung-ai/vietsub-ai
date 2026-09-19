@@ -14,37 +14,35 @@ from google.genai import types
 from utils.srt_parser import clean_srt_response
 
 # Prompt dịch từ Tiếng Trung sang Tiếng Việt
-PROMPT_TRANSLATE_ZH_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề phim và video chuyên nghiệp từ tiếng Trung (Chinese) sang tiếng Việt.
+PROMPT_TRANSLATE_ZH_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề phim và video chuyên nghiệp từ tiếng Trung (Chinese) sang tiếng Việt kiêm đạo diễn lồng tiếng hàng đầu.
 
-NHIỆM VỤ: Nghe tất cả lời thoại tiếng Trung trong video này và dịch sang phụ đề tiếng Việt chính xác, tự nhiên 100% theo định dạng SRT.
+NHIỆM VỤ: Lắng nghe toàn bộ âm thanh lời thoại tiếng Trung trong video và tạo phụ đề tiếng Việt chuẩn xác 100% theo định dạng SRT chuẩn.
 
-YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG CHUẨN MỰC:
+YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG CHUẨN MỰC (CỰC KỲ QUAN TRỌNG):
+1. BẮT TRỌN 100% CÂU TỪ, TUYỆT ĐỐI KHÔNG BỎ SÓT:
+- Dịch đầy đủ 100% tất cả lời thoại có trong video, từ đầu đến cuối, không được bỏ qua bất kỳ câu nào, dù là câu ngắn, câu cảm thán, lời thoại nền hay thì thầm.
+- NGHIÊM CẤM TỰ Ý TÓM TẮT HOẶC CẮT BỚT Ý: Toàn bộ nội dung thông điệp của người nói phải được chuyển ngữ trọn vẹn, chân thực.
+
+2. TONE GIỌNG TỰ NHIÊN, MẠCH LẠC & CHUẨN DẤU CÂU PHÁT THANH VIÊN:
 - Dịch sang tiếng Việt tự nhiên, linh hoạt, chuẩn văn phong đời sống hoặc bối cảnh phim ảnh — tuyệt đối không dịch máy tính word-by-word khô cứng.
-- KHẨU NGỮ LỒNG TIẾNG CÓ HỒN: Bản dịch phải mang tính khẩu ngữ sinh động của người Việt, dùng từ ngữ khí tự nhiên theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả...).
-- NGỮ ĐIỆU & DẤU CÂU ỔN ĐỊNH (CỰC KỲ QUAN TRỌNG ĐỂ GIỌNG ĐỌC AI ĐỀU ĐẶN & KHÔNG NHẢY TONE):
-  * Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, trầm ấm và ổn định xuyên suốt toàn bộ video.
-  * HẠN CHẾ LẠM DỤNG dấu chấm than (!) và dấu ba chấm (...). Các câu trần thuật thông thường BẮT BUỘC kết thúc bằng dấu chấm (.) để giọng đọc AI không bị giật cục hay the thé bất thường.
-  * Chỉ dùng dấu chấm hỏi (?) cho câu hỏi thực sự.
-- Nếu là bài hát / ca từ tiếng Trung: Dịch mượt mà, bay bổng đúng ý nghĩa ca từ và giai điệu.
-- Tách bạch giọng nói khỏi tiếng nhạc nền (BGM) và hiệu ứng âm thanh (SFX) để bắt trọn từng câu thoại.
+- Bản dịch mang tính khẩu ngữ sinh động của người Việt, dùng từ ngữ khí tự nhiên theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả...).
+- NGỮ ĐIỆU & DẤU CÂU ĐỒNG NHẤT ĐỂ GIỌNG ĐỌC AI KHÔNG NHẢY TONE:
+  * Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, đĩnh đạc, đầm ấm và ổn định xuyên suốt toàn bộ video.
+  * Nếu câu nói đang dở dang và tiếp tục ở phân đoạn sau: BẮT BUỘC kết thúc bằng dấu phẩy (,) để giọng đọc AI giữ cao độ tự nhiên, liền mạch.
+  * Kết thúc một câu hoàn chỉnh: Dùng dấu chấm (.).
+  * HẠN CHẾ LẠM DỤNG dấu chấm than (!) và dấu ba chấm (...). Tuyệt đối không dùng dấu ngã (~) hay dấu câu kép (!!, ??). Chỉ dùng dấu hỏi (?) cho câu hỏi thực sự.
+
+3. GỘP CÂU HỢP LÝ & PHÙ HỢP LỒNG TIẾNG:
+- Tránh ngắt vụn từng từ dưới 1.5 giây. Gộp các cụm từ ngắn thành câu hoàn chỉnh đủ ý (thời lượng mỗi phân đoạn lý tưởng từ 2.0s đến 5.0s) để người nghe dễ theo dõi và giọng đọc phát âm tròn vành rõ chữ.
+- Nếu là bài hát / ca từ tiếng Trung: Dịch mượt mà, bay bổng đúng giai điệu và ca từ.
+- Tách bạch giọng nói khỏi tiếng nhạc nền (BGM) và hiệu ứng âm thanh (SFX).
 - Giữ nguyên tên người, địa danh (dùng phiên âm Hán Việt hoặc tên thông dụng quen thuộc).
-- TỐC ĐỘ & ĐỘ DÀI: Câu dịch cần súc tích, ngắn gọn, độ dài số từ tương đương thời lượng câu nói gốc để khi lồng tiếng không bị quá nhanh, dồn chữ hay méo giọng.
-- Bao gồm TẤT CẢ lời thoại, không bỏ sót câu nào.
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng.
-- Timestamp phải khớp chính xác với thời điểm nói trong video.
+- Timestamp phải khớp chính xác từng mili-giây với thời điểm nói trong video.
 - BẮT BUỘC định dạng thời gian 3 phần: Giờ:Phút:Giây,mili-giây (HH:MM:SS,mmm). VÍ DỤ: 00:00:01,000 --> 00:00:04,500. TUYỆT ĐỐI KHÔNG bỏ phần giờ 00:.
 
 ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
 Chỉ xuất nội dung SRT thuần túy, không có markdown (không dùng ```srt), không có giải thích, không có text ngoài SRT.
-
-Ví dụ format đúng:
-1
-00:00:01,000 --> 00:00:04,500
-Xin chào các bạn!
-
-2
-00:00:05,200 --> 00:00:08,000
-Hôm nay chúng ta sẽ tìm hiểu về...
 
 BẮT ĐẦU XUẤT SRT NGAY:"""
 
@@ -54,40 +52,30 @@ PROMPT_TRANSLATE_EN_TO_VI = """Bạn là chuyên gia biên dịch phụ đề v�
 NHIỆM VỤ: Lắng nghe kỹ toàn bộ âm thanh giọng nói tiếng Anh trong video này và tạo phụ đề Tiếng Việt chuẩn xác 100% theo định dạng SRT chuẩn.
 
 YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM (CỰC KỲ QUAN TRỌNG):
-1. BẮT BUỘC 100% TIẾNG VIỆT THUẦN TÚY:
+1. BẮT TRỌN 100% LỜI THOẠI & THUẦN VIỆT 100%:
 - Toàn bộ nội dung phụ đề BẮT BUỘC dịch sang Tiếng Việt chuẩn xác, tự nhiên.
+- Dịch trọn vẹn 100% tất cả câu từ lời thoại trong video, TUYỆT ĐỐI KHÔNG BỎ SÓT bất kỳ câu nói hay ý nào của nhân vật.
 - TUYỆT ĐỐI KHÔNG xuất phụ đề song ngữ (Anh - Việt), KHÔNG để sót nguyên văn câu tiếng Anh trong phụ đề (trừ tên thương hiệu, tên người riêng).
 - TUYỆT ĐỐI KHÔNG chèn nhãn người nói (ví dụ: Speaker 1:, John:, Man:, Người nói:) và KHÔNG chèn chú thích âm thanh (ví dụ: [Music], (Laughter), [tiếng cười], ♪, ♫) vào phụ đề.
 
-2. GỘP CÂU HOÀN CHỈNH & PHÙ HỢP LỒNG TIẾNG (TRÁNH NGẮT VỤN):
-- Người nói tiếng Anh thường nói nhanh và có từ nối. Bạn hãy lắng nghe trọn vẹn và GỘP các cụm từ ngắn thành CÂU HOÀN CHỈNH có đầy đủ ý nghĩa (thời lượng mỗi phân đoạn lý tưởng từ 2.0 giây đến 5.0 giây).
-- TUYỆT ĐỐI KHÔNG ngắt vụn từng từ hay nửa câu dưới 1.5 giây, vì điều đó làm phụ đề chớp nháy và giọng đọc AI lồng tiếng không đủ thời gian phát âm, dẫn đến nuốt chữ hoặc mất câu.
-
-3. VĂN PHONG KHẨU NGỮ TỰ NHIÊN & DẤU CÂU BIỂU CẢM:
+2. TONE GIỌNG TỰ NHIÊN, MẠCH LẠC & CHUẨN DẤU CÂU PHÁT THANH VIÊN:
+- Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, đầm ấm, điềm tĩnh và ổn định xuyên suốt toàn bộ video.
 - Dịch thoát ý theo khẩu ngữ giao tiếp sinh động của người Việt, dùng trợ từ ngữ khí tự nhiên theo cảm xúc nhân vật (nhé, nhỉ, nè, trời ơi, thật sao, cơ chứ, hả, nào...).
 - Dịch chuẩn các thành ngữ (idioms), tiếng lóng (slang), khẩu ngữ giao tiếp đời thường.
-- NGỮ ĐIỆU & DẤU CÂU ỔN ĐỊNH (CỰC KỲ QUAN TRỌNG ĐỂ GIỌNG ĐỌC AI ĐỀU ĐẶN & KHÔNG NHẢY TONE):
-  * Giữ phong thái thuyết minh/phát thanh viên chuẩn mực, đầm ấm và ổn định xuyên suốt toàn bộ video.
-  * HẠN CHẾ LẠM DỤNG dấu chấm than (!) và dấu ba chấm (...). Các câu trần thuật thông thường BẮT BUỘC kết thúc bằng dấu chấm (.) để giọng đọc AI giữ cao độ chuẩn, không bị giật cục hay the thé bất thường.
-  * Dùng dấu phẩy (,) đúng nhịp ngắt nghỉ để câu văn tự nhiên; chỉ dùng dấu chấm hỏi (?) khi là câu hỏi thực sự.
+- ĐỒNG NHẤT DẤU CÂU ĐỂ GIỌNG ĐỌC AI KHÔNG NHẢY TONE BỪA BÃI:
+  * Nếu phân đoạn là vế câu còn tiếp diễn: BẮT BUỘC dùng dấu phẩy (,) ở cuối phân đoạn để giọng đọc AI giữ cao độ tự nhiên, liền mạch vào câu sau.
+  * Chỉ dùng dấu chấm (.) khi kết thúc một câu hoàn chỉnh.
+  * HẠN CHẾ dấu chấm than (!) và dấu ba chấm (...). Chỉ dùng dấu hỏi (?) cho câu hỏi thực sự.
 
-4. TỐC ĐỘ & ĐỘ DÀI:
-- Câu dịch cần súc tích, cô đọng, độ dài số từ tương xứng với thời lượng nói của câu gốc trong video để khi lồng tiếng không bị quá nhanh hoặc dồn dập chữ.
+3. GỘP CÂU HOÀN CHỈNH & PHÙ HỢP LỒNG TIẾNG:
+- Lắng nghe trọn vẹn và GỘP các cụm từ ngắn thành CÂU HOÀN CHỈNH có đầy đủ ý nghĩa (thời lượng mỗi phân đoạn lý tưởng từ 2.0 giây đến 5.0 giây).
+- TUYỆT ĐỐI KHÔNG ngắt vụn từng từ hay nửa câu dưới 1.5 giây để phụ đề dễ đọc và giọng đọc AI có đủ thời gian phát âm trọn vẹn, không nuốt chữ.
+- Câu dịch cần súc tích, cô đọng, độ dài tương xứng thời lượng nói của video.
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng để vừa vặn khung hình.
-- Timestamp phải khớp chính xác từng mili-giây với thời điểm bắt đầu và kết thúc câu nói trong video.
-- BẮT BUỘC định dạng thời gian 3 phần: Giờ:Phút:Giây,mili-giây (HH:MM:SS,mmm). VÍ DỤ: 00:00:01,200 --> 00:00:04,800. TUYỆT ĐỐI KHÔNG bỏ phần giờ 00:.
+- Timestamp phải khớp chính xác từng mili-giây với thời điểm bắt đầu và kết thúc câu nói trong video (HH:MM:SS,mmm).
 
 ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
 Chỉ xuất nội dung SRT thuần túy, không có markdown (không dùng ```srt), không có giải thích, không có text ngoài SRT.
-
-Ví dụ format đúng:
-1
-00:00:01,200 --> 00:00:04,800
-Chào mừng mọi người đã quay trở lại với kênh của mình!
-
-2
-00:00:05,100 --> 00:00:08,400
-Trong video ngày hôm nay, chúng ta sẽ cùng khám phá bí quyết...
 
 BẮT ĐẦU XUẤT SRT NGAY:"""
 
@@ -97,13 +85,18 @@ PROMPT_TRANSCRIBE_VI = """Bạn là chuyên gia thẩm âm, phiên âm và tạo
 NHIỆM VỤ: Lắng nghe kỹ toàn bộ lời thoại / bài hát / giọng nói tiếng Việt trong video này và tạo phụ đề tiếng Việt chuẩn xác 100% theo định dạng SRT.
 
 YÊU CẦU PHIÊN ÂM CHÍNH XÁC (QUAN TRỌNG):
-1. NHẬN DIỆN BÀI HÁT & CA TỪ CHUẨN:
-- Nếu video chứa bài hát, ca khúc, rap, dân ca, ca dao, nhạc thiếu nhi, nhạc trẻ, nhạc Trung Thu hoặc âm thanh TikTok: Hãy lắng nghe kết hợp đối chiếu với lời gốc chuẩn xác của bài hát để ghi đúng từng từ, tuyệt đối không chép nhầm sang từ vô nghĩa do giai điệu kéo dài hoặc nhạc nền lấn át giọng hát (Ví dụ bài Cây Đa Quán Dốc: "Cùng nhau trèo lên quán dốc, lốc ca lốc cốc tìm gốc cây đa, nghỉ chân têm ba miếng trầu...", KHÔNG ĐƯỢC nghe nhầm thành "Cốc ca cốc cốc" hay "tìm ba miếng trầu").
+1. BẮT TRỌN 100% CA TỪ & LỜI THOẠI, KHÔNG BỎ QUA CÂU NÀO:
+- Phiên âm đầy đủ 100% lời nói và bài hát trong video, không bỏ sót bất kỳ câu nào.
+- Nếu video chứa bài hát, ca khúc, rap, dân ca, ca dao, nhạc thiếu nhi, nhạc trẻ, nhạc Trung Thu hoặc âm thanh TikTok: Hãy lắng nghe kết hợp đối chiếu với lời gốc chuẩn xác của bài hát để ghi đúng từng từ, tuyệt đối không chép nhầm sang từ vô nghĩa do giai điệu kéo dài hoặc nhạc nền lấn át giọng hát.
+
 2. PHÂN BIỆT RÕ PHỤ ÂM ĐẦU & DẤU THANH DỄ NHẦM:
 - Chú ý cao độ các phụ âm dễ nhầm lẫn khi hát hoặc phát âm nhanh: "l" vs "c" ("lốc ca lốc cốc" chứ không phải "cốc ca cốc cốc"), "l" vs "n", "t" vs "đ" ("têm trầu" chứ không phải "tìm trầu"), "s" vs "x", "tr" vs "ch", "d/gi/r".
 - Giữ câu từ có nghĩa mạch lạc, chuẩn văn phong và chính tả tiếng Việt có dấu đầy đủ.
+
 3. TÁCH BẠCH GIỌNG NÓI KHỎI NHẠC NỀN & BEAT:
 - Tập trung phân tích dải tần giọng người (vocal), loại bỏ ảnh hưởng của tiếng beat, tiếng bass, nhạc cụ đệm hoặc tạp âm xung quanh.
+- Nếu câu đang dở dang và tiếp tục ở dòng sau, dùng dấu phẩy (,) để giữ nhịp điệu tự nhiên.
+
 4. ĐỘ DÀI & ĐỊNH DẠNG:
 - Mỗi phụ đề tối đa 2 dòng, tối đa 40 ký tự mỗi dòng để vừa vặn khung hình video.
 - Timestamp phải khớp chính xác từng mili-giây với thời điểm bắt đầu và kết thúc câu nói/câu hát.
@@ -111,15 +104,6 @@ YÊU CẦU PHIÊN ÂM CHÍNH XÁC (QUAN TRỌNG):
 
 ĐỊNH DẠNG ĐẦU RA (NGHIÊM NGẶT):
 Chỉ xuất nội dung SRT thuần túy, không có markdown (không dùng ```srt), không có giải thích, không có text ngoài SRT.
-
-Ví dụ format đúng:
-1
-00:00:01,000 --> 00:00:03,800
-Xin chào tất cả mọi người!
-
-2
-00:00:04,200 --> 00:00:07,500
-Ngày hôm nay mình sẽ chia sẻ với các bạn một mẹo cực hay...
 
 BẮT ĐẦU XUẤT SRT NGAY:"""
 
@@ -137,8 +121,9 @@ PROMPT_AUTO_TO_VI = """Bạn là chuyên gia dịch thuật phụ đề phim và
 NHIỆM VỤ: Lắng nghe toàn bộ lời thoại trong video, TỰ ĐỘNG NHẬN DIỆN ngôn ngữ gốc, rồi dịch sang phụ đề Tiếng Việt chuẩn xác 100% theo định dạng SRT chuẩn.
 
 QUY TRÌNH & YÊU CẦU DỊCH THUẬT & LỒNG TIẾNG TRUYỀN CẢM:
-1. NHẬN DIỆN VÀ DỊCH 100% SANG TIẾNG VIỆT THUẦN TÚY:
+1. BẮT TRỌN 100% LỜI THOẠI & DỊCH SANG TIẾNG VIỆT THUẦN TÚY:
 - Tự động nhận diện ngôn ngữ đang được nói trong video (Anh, Trung, Nhật, Hàn, Thái, Pháp, Tây Ban Nha, Đức, ...).
+- Dịch đầy đủ 100% nội dung lời thoại, TUYỆT ĐỐI KHÔNG BỎ QUA bất kỳ câu nào, không tự ý tóm tắt hay cắt bớt câu.
 - Dịch thoát ý sang Tiếng Việt tự nhiên, linh hoạt, chuẩn văn phong đời sống hoặc bối cảnh phim ảnh — tuyệt đối không dịch word-by-word máy móc.
 - Toàn bộ phụ đề BẮT BUỘC bằng Tiếng Việt 100%, TUYỆT ĐỐI KHÔNG xuất phụ đề song ngữ hay để lẫn tiếng gốc.
 - TUYỆT ĐỐI KHÔNG chèn nhãn người nói (Speaker 1:, Người nói:) và KHÔNG chèn chú thích âm thanh ([Music], (Laughter), [tiếng cười], ♪, ♫).

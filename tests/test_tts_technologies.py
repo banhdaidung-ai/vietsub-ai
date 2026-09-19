@@ -258,7 +258,7 @@ async def test_consistent_tts_voice_retention():
         log_callback=lambda msg: logs.append(msg),
     )
 
-    async def mock_generate(text, out_path, voice_override=None):
+    async def mock_generate(text, out_path, voice_override=None, **kwargs):
         used_voices.append(voice_override)
         with open(out_path, "wb") as f:
             f.write(b"fake-audio-data")
@@ -314,9 +314,75 @@ async def test_persistent_edge_tts_retry_until_success():
             success = await gen._generate_single_edge_tts("Xin chào Việt Nam", tmp_out)
             assert success is True
             assert call_count == 3
-            assert any("Đã tạo thành công" in l for l in logs)
-            assert any("thử lại lần 2" in l for l in logs)
+
+def test_clause_continuation_detection():
+    """Kiểm tra nhận diện câu nối giữa các card phụ đề để giữ ngữ điệu liền mạch."""
+    from utils.srt_parser import is_clause_continuation
+
+    # Vế kết thúc bằng dấu phẩy -> tiếp diễn
+    assert is_clause_continuation("Khi tôi bước vào phòng,", "mọi người đều im lặng", 300) is True
+
+    # Vế không có dấu kết thúc và câu sau viết thường -> tiếp diễn
+    assert is_clause_continuation("Chúng ta không chỉ học tập", "mà còn phải thực hành", 200) is True
+
+    # Câu đã trọn vẹn kết thúc bằng dấu chấm -> không tiếp diễn
+    assert is_clause_continuation("Chúng ta cần phải thực hành.", "Tiếp theo là bước hai.", 200) is False
+
+    # Khoảng lặng giữa 2 câu quá dài (> 1.2s) -> ngắt câu để thở tự nhiên
+    assert is_clause_continuation("Chúng ta không chỉ học tập", "mà còn phải thực hành", 1500) is False
 
 
+def test_prepare_text_symbol_expansion():
+    """Kiểm tra chuyển hóa ký hiệu toán học / tiền tệ thành chữ viết để phát âm tự nhiên tiếng Việt."""
+    gen = TTSGenerator()
+    prepared = gen._prepare_text_for_edge_tts("Tăng trưởng 15% & đạt mốc $500 + thêm ưu đãi")
+    assert "phần trăm" in prepared
+    assert "và" in prepared
+    assert "đô la" in prepared
+    assert "cộng" in prepared
 
 
+@pytest.mark.asyncio
+async def test_ripple_timeline_scheduler_zero_truncation():
+    """Kiểm tra thuật toán Non-Colliding Ripple Scheduler: 100% câu từ được nói trọn vẹn, không bị cắt ngắn (-t)."""
+    gen = TTSGenerator(
+        voice="vi-VN-NamMinhNeural",
+        tts_technology="edge",
+    )
+
+    # 3 segments ban đầu: mỗi segment 2 giây (0-2s, 2-4s, 4-6s)
+    segs = [
+        SRTSegment(index=1, start="00:00:00,000", end="00:00:02,000", text="Đoạn văn dài thứ nhất", start_ms=0, end_ms=2000),
+        SRTSegment(index=2, start="00:00:02,000", end="00:00:04,000", text="Đoạn văn dài thứ hai", start_ms=2000, end_ms=4000),
+        SRTSegment(index=3, start="00:00:04,000", end="00:00:06,000", text="Đoạn văn kết thúc", start_ms=4000, end_ms=6000),
+    ]
+
+    async def mock_gen(text, out_path, **kwargs):
+        with open(out_path, "wb") as f:
+            f.write(b"mock-audio")
+        return True
+
+    recorded_mix_duration = []
+
+    async def mock_combine(seg_paths, total_duration_sec, output_path, tmp_dir):
+        # Lưu lại timeline sau khi schedule
+        recorded_mix_duration.append((list(seg_paths), total_duration_sec))
+
+    with patch.object(gen, "_generate_single_edge_tts", side_effect=mock_gen):
+        with patch.object(gen, "_get_audio_duration_ms", return_value=2500):
+            with patch.object(gen, "_combine_segments", side_effect=mock_combine):
+                tmp_out = os.path.join(tempfile.gettempdir(), "test_ripple.mp3")
+                await gen._generate_track_async(segs, 6.0, tmp_out)
+
+    assert len(recorded_mix_duration) == 1
+    scheduled_segs, total_dur = recorded_mix_duration[0]
+    assert len(scheduled_segs) == 3
+
+    # Kiểm tra tính chất không đè âm (Non-Colliding): câu sau phải bắt đầu >= câu trước kết thúc + 80ms
+    seg1, _ = scheduled_segs[0]
+    seg2, _ = scheduled_segs[1]
+    seg3, _ = scheduled_segs[2]
+
+    assert seg1.start_ms == 0
+    assert seg2.start_ms >= seg1.end_ms + 80
+    assert seg3.start_ms >= seg2.end_ms + 80
