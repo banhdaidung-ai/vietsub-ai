@@ -21,14 +21,17 @@ fi
 echo "📦 Kiểm tra PyInstaller..."
 uv pip install --python "$PYTHON_BIN" pyinstaller
 
-# 3. Chuẩn bị FFmpeg cho macOS (chỉ cần ffmpeg, không cần ffprobe)
-echo "⚡ Đang chuẩn bị bộ giải mã FFmpeg cho macOS..."
+# 3. Chuẩn bị FFmpeg và FFprobe cho macOS
+echo "⚡ Đang chuẩn bị bộ giải mã FFmpeg & FFprobe cho macOS..."
 mkdir -p bin
-"$PYTHON_BIN" -c "import static_ffmpeg.run; ffmpeg, _ = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise(); import shutil; shutil.copy(ffmpeg, 'bin/ffmpeg');" 2>/dev/null || true
+"$PYTHON_BIN" -c "import static_ffmpeg.run; ffmpeg, ffprobe = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise(); import shutil; shutil.copy(ffmpeg, 'bin/ffmpeg'); shutil.copy(ffprobe, 'bin/ffprobe');" 2>/dev/null || true
 if [ ! -f "bin/ffmpeg" ] && which ffmpeg >/dev/null 2>&1; then
     cp "$(which ffmpeg)" bin/ffmpeg 2>/dev/null || true
 fi
-rm -f bin/ffprobe bin/ffprobe.exe 2>/dev/null || true
+if [ ! -f "bin/ffprobe" ] && which ffprobe >/dev/null 2>&1; then
+    cp "$(which ffprobe)" bin/ffprobe 2>/dev/null || true
+fi
+chmod +x bin/ffmpeg bin/ffprobe 2>/dev/null || true
 
 # 4. Dọn dẹp thư mục build cũ
 echo "🧹 Dọn dẹp thư mục build cũ..."
@@ -43,35 +46,24 @@ if [ ! -d "dist/VietsubAI.app" ]; then
     exit 1
 fi
 
-# Đảm bảo chỉ có DUY NHẤT 1 file ffmpeg trong toàn bộ bundle, khử trùng lặp triệt để
-if [ -f "dist/VietsubAI.app/Contents/Frameworks/ffmpeg" ]; then
-    echo "⚡ FFmpeg đã có sẵn trong Contents/Frameworks/ffmpeg."
-    rm -f "dist/VietsubAI.app/Contents/MacOS/ffmpeg" 2>/dev/null || true
-elif [ -f "bin/ffmpeg" ]; then
+# Đảm bảo ffmpeg và ffprobe có mặt đầy đủ trong bundle
+if [ ! -f "dist/VietsubAI.app/Contents/MacOS/ffmpeg" ] && [ -f "bin/ffmpeg" ]; then
     cp bin/ffmpeg "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
 fi
-# Loại bỏ triệt để mọi file ffprobe thừa nếu có trong bundle
-find "dist/VietsubAI.app" -name "*ffprobe*" -delete 2>/dev/null || true
+if [ ! -f "dist/VietsubAI.app/Contents/MacOS/ffprobe" ] && [ -f "bin/ffprobe" ]; then
+    cp bin/ffprobe "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
+fi
+chmod +x "dist/VietsubAI.app/Contents/MacOS/ffmpeg" "dist/VietsubAI.app/Contents/MacOS/ffprobe" 2>/dev/null || true
 
-# 6. DỌN RÁC TRIỆT ĐỂ — Giảm dung lượng bundle mà không ảnh hưởng chức năng
+# 6. DỌN RÁC AN TOÀN — Giảm dung lượng bundle mà không ảnh hưởng chức năng
 echo "🧹 Đang dọn rác để tối ưu dung lượng..."
 
 APP_FW="dist/VietsubAI.app/Contents/Frameworks"
 APP_RES="dist/VietsubAI.app/Contents/Resources"
 
 # 6a. Xóa protoc binaries trong torch/bin (không cần cho inference)
-rm -rf "$APP_FW/torch/bin/protoc" "$APP_FW/torch/bin/protoc-"* 2>/dev/null || true
+rm -rf "$APP_FW/torch/bin/protoc"* 2>/dev/null || true
 echo "   ✂️  Đã xóa protoc (~7.6MB)"
-
-# 6b. Xóa torch testing data (test utilities, không cần cho runtime)
-rm -rf "$APP_RES/torch/testing" 2>/dev/null || true
-rm -rf "$APP_RES/torch/_inductor" 2>/dev/null || true
-rm -rf "$APP_RES/torch/_dynamo" 2>/dev/null || true
-rm -rf "$APP_RES/torch/_export" 2>/dev/null || true
-rm -rf "$APP_RES/torch/_functorch" 2>/dev/null || true
-rm -rf "$APP_RES/torch/onnx" 2>/dev/null || true
-rm -rf "$APP_RES/torch/ao" 2>/dev/null || true
-echo "   ✂️  Đã xóa torch testing/inductor/dynamo/export data"
 
 # 6c. Xóa .dist-info (metadata cài đặt, không cần khi chạy)
 find "dist/VietsubAI.app" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
@@ -88,14 +80,11 @@ echo "   ✂️  Đã xóa icon trùng lặp (~1.9MB)"
 # 6f. Xóa file .pyc rời rạc không trong __pycache__
 find "dist/VietsubAI.app" -name "*.pyc" -delete 2>/dev/null || true
 
-# 6g. Xóa file torch_shm_manager (shared memory, không cần trên macOS single-process)
-rm -f "$APP_FW/torch/bin/torch_shm_manager" 2>/dev/null || true
-
 # Hiển thị dung lượng sau khi dọn
 AFTER_SIZE=$(du -sh "dist/VietsubAI.app" | cut -f1)
 echo "   📦 Dung lượng .app sau khi dọn rác: $AFTER_SIZE"
 
-echo "✅ Đã tạo thành công: dist/VietsubAI.app (Đã tối ưu dung lượng, 1 bản FFmpeg duy nhất)"
+echo "✅ Đã tạo thành công: dist/VietsubAI.app (Đã tích hợp đầy đủ FFmpeg & FFprobe và Demucs AI)"
 
 # 5. Đóng gói thành file đĩa cài đặt .dmg (Drag & Drop vào Applications)
 echo "💿 Đang tạo file cài đặt dist/VietsubAI.dmg..."

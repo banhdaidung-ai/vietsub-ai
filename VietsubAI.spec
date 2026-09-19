@@ -17,7 +17,7 @@ hiddenimports = [
     'pydantic.deprecated.decorator',
 ]
 
-for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs']:
+for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs', 'julius', 'lameenc', 'sphn', 'safetensors', 'einops']:
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
@@ -38,13 +38,14 @@ try:
 except Exception:
     pass
 
-# Tự động nhúng DUY NHẤT 1 bản ffmpeg (không cần ffprobe) vào thư mục gốc của bản build nếu có sẵn
-for search_dir in ['.', 'bin', 'assets/bin']:
-    for ext in ['.exe', '']:
-        cand = os.path.join(search_dir, f"ffmpeg{ext}")
-        if os.path.isfile(cand) and not any(cand == b[0] for b in binaries):
-            binaries.append((cand, '.'))
-            break
+# Tự động nhúng cả ffmpeg và ffprobe vào thư mục gốc của bản build nếu có sẵn
+for tool in ['ffmpeg', 'ffprobe']:
+    for search_dir in ['.', 'bin', 'assets/bin']:
+        for ext in ['.exe', '']:
+            cand = os.path.join(search_dir, f"{tool}{ext}")
+            if os.path.isfile(cand) and not any(cand == b[0] for b in binaries):
+                binaries.append((cand, '.'))
+                break
 
 a = Analysis(
     ['main.py'],

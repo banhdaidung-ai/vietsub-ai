@@ -13,16 +13,66 @@ import threading
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from utils.ffmpeg_check import get_ffmpeg_path
+from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
+
+
+def _ensure_ffmpeg_ffprobe_in_path():
+    """Đảm bảo thư mục chứa ffmpeg và ffprobe được đưa vào os.environ['PATH'] để Demucs gọi thành công."""
+    paths_to_add = []
+
+    ffmpeg_p = get_ffmpeg_path()
+    if ffmpeg_p and os.path.isfile(ffmpeg_p):
+        paths_to_add.append(str(Path(ffmpeg_p).parent))
+
+    ffprobe_p = get_ffprobe_path()
+    if ffprobe_p and os.path.isfile(ffprobe_p):
+        paths_to_add.append(str(Path(ffprobe_p).parent))
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        paths_to_add.extend([
+            str(exe_dir),
+            str(exe_dir.parent / "MacOS"),
+            str(exe_dir.parent / "Frameworks"),
+            str(exe_dir.parent / "Resources"),
+            str(exe_dir / "_internal"),
+            str(exe_dir / "bin"),
+        ])
+    else:
+        project_root = Path(__file__).resolve().parent.parent
+        paths_to_add.extend([
+            str(project_root / "bin"),
+            str(project_root),
+        ])
+
+    candidate_system_dirs = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        str(Path.home() / ".local/bin"),
+        str(Path.home() / ".gemini/antigravity-ide/bin"),
+        "/usr/bin",
+    ]
+    paths_to_add.extend(candidate_system_dirs)
+
+    curr_path = os.environ.get("PATH", "")
+    existing_parts = curr_path.split(os.pathsep)
+    new_parts = []
+    for p in paths_to_add:
+        if p and os.path.isdir(p) and p not in existing_parts and p not in new_parts:
+            new_parts.append(p)
+    if new_parts:
+        os.environ["PATH"] = os.pathsep.join(new_parts) + os.pathsep + curr_path
 
 
 def check_demucs_installed() -> Tuple[bool, str]:
     """Kiểm tra xem thư viện demucs và torch đã sẵn sàng chưa."""
+    _ensure_ffmpeg_ffprobe_in_path()
     try:
         import torch  # noqa: F401
         import demucs  # noqa: F401
+        from demucs.api import Separator  # noqa: F401
         return True, "Demucs AI sẵn sàng."
-    except ImportError as e:
+    except Exception as e:
         return False, f"Chưa cài đặt thư viện Demucs AI: {e}"
 
 
@@ -57,29 +107,20 @@ def separate_audio_stems(
 ) -> Dict[str, str]:
     """
     Tách nguồn âm thanh bằng Demucs (2 stems: vocals + no_vocals / instrumental).
-    
-    Args:
-        input_path: Đường dẫn tới file video hoặc audio.
-        output_dir: Thư mục lưu kết quả.
-        mode: "both" (tách cả 2), "instrumental" (chỉ lấy nhạc), "vocals" (chỉ lấy lời).
-        audio_format: "mp3" hoặc "wav".
-        bitrate: Bitrate cho mp3 (mặc định "320k").
-        device: Thiết bị tính toán ("mps", "cuda", "cpu").
-        progress_callback: Callback(tiến_độ_0_đến_1, nhãn_mô_tả).
-        cancel_event: Event báo hiệu hủy tiến trình.
-        
-    Returns:
-        Dict chứa đường dẫn các file đã tạo, ví dụ:
-        {"vocals": "/path/..._loi.mp3", "instrumental": "/path/..._beat.mp3"}
+    Sử dụng trực tiếp Python API demucs.api.Separator & save_audio chuẩn mực.
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"Không tìm thấy file nguồn: {input_path}")
+
+    _ensure_ffmpeg_ffprobe_in_path()
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     base_stem = _clean_stem_name(input_path)
     fmt = audio_format.lower().strip(".")
     if fmt not in ("mp3", "wav"):
         fmt = "mp3"
+
+    bitrate_int = int(re.sub(r"[^\d]", "", bitrate) or "320")
 
     if device is None:
         device = get_optimal_device()
@@ -88,11 +129,9 @@ def separate_audio_stems(
         dev_label = "Apple GPU (MPS)" if device == "mps" else ("Nvidia GPU (CUDA)" if device == "cuda" else "CPU")
         progress_callback(0.05, f"Chuẩn bị tách âm thanh (Thiết bị: {dev_label})...")
 
-    # Tạo thư mục tạm để làm việc
     temp_work_dir = tempfile.mkdtemp(prefix="vietsub_demucs_")
 
     try:
-        # Bước 1: Nếu là file video, bóc tách audio sang WAV tạm thời bằng FFmpeg để đảm bảo Demucs đọc hoàn hảo
         audio_input_path = input_path
         video_exts = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".ts", ".m4v"}
         is_video = Path(input_path).suffix.lower() in video_exts
@@ -108,153 +147,70 @@ def separate_audio_stems(
                 temp_wav
             ]
             res = subprocess.run(cmd_extract, capture_output=True, text=True, errors="replace")
-            if res.returncode != 0 or not os.path.exists(temp_wav):
-                # Fallback: Dùng file gốc trực tiếp nếu ffmpeg bóc tách bị lỗi
-                audio_input_path = input_path
-            else:
+            if res.returncode == 0 and os.path.exists(temp_wav):
                 audio_input_path = temp_wav
 
         if cancel_event and cancel_event.is_set():
             raise RuntimeError("Người dùng đã hủy tác vụ.")
 
-        # Bước 2: Tách âm thanh bằng Demucs AI
-        demucs_out_dir = os.path.join(temp_work_dir, "separated")
-        os.makedirs(demucs_out_dir, exist_ok=True)
-
-        demucs_opts = [
-            "--two-stems=vocals",
-            "-n", "htdemucs",
-            "-o", demucs_out_dir,
-            "-d", device,
-        ]
-
-        if fmt == "mp3":
-            demucs_opts += ["--mp3", "--mp3-bitrate", bitrate.replace("k", "")]
-
-        demucs_opts.append(audio_input_path)
-
         if progress_callback:
             progress_callback(0.20, "Đang nạp mô hình AI Demucs v4...")
 
-        is_frozen = getattr(sys, "frozen", False)
-        if is_frozen:
-            import demucs.separate
-            try:
-                demucs.separate.main(demucs_opts)
-            except SystemExit as se:
-                if se.code not in (0, None):
-                    if device == "mps":
-                        if progress_callback:
-                            progress_callback(0.25, "MPS không hỗ trợ toán tử này, đang chuyển sang CPU...")
-                        return separate_audio_stems(
-                            input_path=input_path,
-                            output_dir=output_dir,
-                            mode=mode,
-                            audio_format=audio_format,
-                            bitrate=bitrate,
-                            device="cpu",
-                            progress_callback=progress_callback,
-                            cancel_event=cancel_event,
-                        )
-                    raise RuntimeError(f"Demucs AI gặp lỗi (mã thoát: {se.code}).")
-            if progress_callback:
-                progress_callback(0.90, "Đã hoàn tất tách âm thanh bằng Demucs AI.")
-        else:
-            cmd_demucs = [sys.executable, "-m", "demucs"] + demucs_opts
+        from demucs.api import Separator, save_audio
 
-            # Chạy Demucs với khả năng hủy và đọc tiến trình
-            proc = subprocess.Popen(
-                cmd_demucs,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
+        def _demucs_cb(info: dict):
+            if cancel_event and cancel_event.is_set():
+                raise KeyboardInterrupt("Người dùng đã hủy tác vụ.")
+            if progress_callback and "segment_offset" in info and "audio_length" in info:
+                total = info["audio_length"]
+                if total > 0:
+                    cur = info["segment_offset"]
+                    frac = min(1.0, max(0.0, cur / float(total)))
+                    pct = 0.25 + frac * 0.65
+                    val_pct = int(frac * 100)
+                    progress_callback(pct, f"Đang tách âm thanh bằng AI Demucs: {val_pct}%...")
+
+        try:
+            separator = Separator(
+                model="htdemucs",
+                device=device,
+                callback=_demucs_cb,
             )
-
-            pct_regex = re.compile(r"(\d+)%")
-            last_pct = 0.20
-
-            while True:
-                if cancel_event and cancel_event.is_set():
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                    raise RuntimeError("Người dùng đã hủy tác vụ tách âm thanh.")
-
-                line = proc.stdout.readline()
-                if not line and proc.poll() is not None:
-                    break
-
-                if line:
-                    line_str = line.strip()
-                    # Bắt phần trăm tiến trình từ thanh tiến độ của Demucs / tqdm
-                    match = pct_regex.search(line_str)
-                    if match:
-                        val = int(match.group(1))
-                        # Map từ 0%..100% của Demucs sang 0.25..0.90 của toàn bộ tác vụ
-                        mapped_pct = 0.25 + (val / 100.0) * 0.65
-                        if mapped_pct > last_pct:
-                            last_pct = mapped_pct
-                            if progress_callback:
-                                progress_callback(
-                                    mapped_pct,
-                                    f"Đang tách âm thanh bằng AI: {val}%...",
-                                )
-
-            ret_code = proc.wait()
-            if ret_code != 0:
-                # Nếu chạy bằng MPS bị lỗi (ví dụ một số hàm MPS chưa hỗ trợ), thử fallback về CPU
-                if device == "mps":
-                    if progress_callback:
-                        progress_callback(0.25, "MPS không hỗ trợ toán tử này, đang chuyển sang CPU...")
-                    return separate_audio_stems(
-                        input_path=input_path,
-                        output_dir=output_dir,
-                        mode=mode,
-                        audio_format=audio_format,
-                        bitrate=bitrate,
-                        device="cpu",
-                        progress_callback=progress_callback,
-                        cancel_event=cancel_event,
-                    )
-                raise RuntimeError(f"Demucs AI gặp lỗi (mã thoát: {ret_code}).")
+            origin, separated = separator.separate_audio_file(audio_input_path)
+        except KeyboardInterrupt:
+            raise RuntimeError("Người dùng đã hủy tác vụ tách âm thanh.")
+        except Exception as e:
+            if device == "mps":
+                if progress_callback:
+                    progress_callback(0.25, "MPS không hỗ trợ toán tử này, đang chuyển sang CPU...")
+                return separate_audio_stems(
+                    input_path=input_path,
+                    output_dir=output_dir,
+                    mode=mode,
+                    audio_format=audio_format,
+                    bitrate=bitrate,
+                    device="cpu",
+                    progress_callback=progress_callback,
+                    cancel_event=cancel_event,
+                )
+            raise RuntimeError(f"Lỗi khi tách âm thanh bằng Demucs AI: {e}")
 
         if cancel_event and cancel_event.is_set():
             raise RuntimeError("Người dùng đã hủy tác vụ.")
 
         if progress_callback:
-            progress_callback(0.92, "Đang đóng gói và hoàn tất file xuất...")
+            progress_callback(0.92, "Đang lưu và hoàn tất các luồng âm thanh...")
 
-        # Bước 3: Tìm file xuất từ Demucs và chuyển vào thư mục output của người dùng
-        # Demucs lưu tại: demucs_out_dir/htdemucs/<tên_file_input>/
-        # Các file gồm: vocals.mp3 (hoặc .wav) và no_vocals.mp3 (hoặc .wav)
-        source_stem = Path(audio_input_path).stem
-        stems_dir = os.path.join(demucs_out_dir, "htdemucs", source_stem)
-        if not os.path.exists(stems_dir):
-            # Tìm thư mục con bất kỳ trong htdemucs nếu stem khác biệt
-            htdemucs_dir = os.path.join(demucs_out_dir, "htdemucs")
-            if os.path.exists(htdemucs_dir):
-                subdirs = [os.path.join(htdemucs_dir, d) for d in os.listdir(htdemucs_dir) if os.path.isdir(os.path.join(htdemucs_dir, d))]
-                if subdirs:
-                    stems_dir = subdirs[0]
+        vocal_tensor = separated.get("vocals")
+        if vocal_tensor is None:
+            raise RuntimeError("Mô hình không tạo được luồng âm thanh vocals.")
 
-        if not os.path.exists(stems_dir):
-            raise RuntimeError("Không tìm thấy kết quả tách âm thanh từ Demucs.")
-
-        found_vocals = None
-        found_instrumental = None
-
-        for f in os.listdir(stems_dir):
-            f_lower = f.lower()
-            full_f = os.path.join(stems_dir, f)
-            if "vocals" in f_lower and "no_vocals" not in f_lower:
-                found_vocals = full_f
-            elif "no_vocals" in f_lower or "instrumental" in f_lower:
-                found_instrumental = full_f
+        # Tạo luồng instrumental (nhạc beat): tổng các stem còn lại hoặc origin - vocal
+        other_stems = [tensor for name, tensor in separated.items() if name != "vocals"]
+        if other_stems:
+            inst_tensor = sum(other_stems)
+        else:
+            inst_tensor = origin - vocal_tensor
 
         result_files: Dict[str, str] = {}
 
@@ -266,19 +222,26 @@ def separate_audio_stems(
                 counter += 1
             return dest
 
-        # Xử lý theo mode
-        if mode in ("both", "vocals") and found_vocals and os.path.exists(found_vocals):
+        # Lưu Vocal
+        if mode in ("both", "vocals"):
             target_vocal = _get_unique_dest("[Vocal_Loi]")
-            shutil.move(found_vocals, target_vocal)
+            if fmt == "mp3":
+                save_audio(vocal_tensor, target_vocal, samplerate=separator.samplerate, bitrate=bitrate_int)
+            else:
+                save_audio(vocal_tensor, target_vocal, samplerate=separator.samplerate)
             result_files["vocals"] = target_vocal
 
-        if mode in ("both", "instrumental") and found_instrumental and os.path.exists(found_instrumental):
+        # Lưu Instrumental / Beat
+        if mode in ("both", "instrumental"):
             target_inst = _get_unique_dest("[Beat_Karaoke]")
-            shutil.move(found_instrumental, target_inst)
+            if fmt == "mp3":
+                save_audio(inst_tensor, target_inst, samplerate=separator.samplerate, bitrate=bitrate_int)
+            else:
+                save_audio(inst_tensor, target_inst, samplerate=separator.samplerate)
             result_files["instrumental"] = target_inst
 
         if not result_files:
-            raise RuntimeError("Không có file âm thanh nào được tạo ra thành công.")
+            raise RuntimeError("Không có file âm thanh nào được tạo ra.")
 
         if progress_callback:
             progress_callback(1.0, "Tách giọng hát và nhạc beat thành công!")
@@ -286,7 +249,6 @@ def separate_audio_stems(
         return result_files
 
     finally:
-        # Dọn dẹp thư mục tạm
         try:
             shutil.rmtree(temp_work_dir, ignore_errors=True)
         except Exception:

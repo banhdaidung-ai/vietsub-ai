@@ -50,17 +50,18 @@ if not exist "dist\VietsubAI\VietsubAI.exe" (
     exit /b 1
 )
 
-:: Đảm bảo FFmpeg có mặt trong thư mục dist\VietsubAI và không bị trùng lặp
+:: Đảm bảo FFmpeg và FFprobe có mặt trong thư mục dist\VietsubAI
 if exist "bin\ffmpeg.exe" (
     if not exist "dist\VietsubAI\ffmpeg.exe" (
-        if not exist "dist\VietsubAI\_internal\ffmpeg.exe" (
-            copy /y "bin\ffmpeg.exe" "dist\VietsubAI\" >nul
-        )
+        copy /y "bin\ffmpeg.exe" "dist\VietsubAI\" >nul
     )
-    del /f /q "dist\VietsubAI\*ffprobe*" 2>nul
-    del /f /q "dist\VietsubAI\_internal\*ffprobe*" 2>nul
-    echo [OK] Đã tối ưu và nhúng 1 bản ffmpeg.exe duy nhất vào dist\VietsubAI!
 )
+if exist "bin\ffprobe.exe" (
+    if not exist "dist\VietsubAI\ffprobe.exe" (
+        copy /y "bin\ffprobe.exe" "dist\VietsubAI\" >nul
+    )
+)
+echo [OK] Đã tối ưu và nhúng đầy đủ ffmpeg.exe & ffprobe.exe vào dist\VietsubAI!
 
 echo.
 echo ==========================================================

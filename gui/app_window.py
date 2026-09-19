@@ -1542,11 +1542,23 @@ class AppWindow(_BaseWindow):
         self._log_msg(f"🎨 Đã chọn mẫu phụ đề: {preset['name']}")
 
     def _check_prerequisites_async(self):
-        """Chạy trên background thread: kiểm tra FFmpeg và API Key rồi cập nhật Badges trên main thread."""
-        ok, msg = check_ffmpeg()
-        api_key = self.config.get("gemini_api_key", "")
-        # Cập nhật UI phải chạy trên main thread
-        self.after(0, lambda: self._apply_prerequisites_result(ok, msg, api_key))
+        """Chạy trên background thread: kiểm tra FFmpeg và API Key rồi đẩy vào task_queue để cập nhật UI trên main thread."""
+        try:
+            ok, msg = check_ffmpeg()
+            api_key = self.config.get("gemini_api_key", "")
+            self.task_queue.put({
+                "type": "prerequisites_result",
+                "ffmpeg_ok": ok,
+                "ffmpeg_msg": msg,
+                "api_key": api_key,
+            })
+        except Exception as e:
+            self.task_queue.put({
+                "type": "prerequisites_result",
+                "ffmpeg_ok": False,
+                "ffmpeg_msg": str(e),
+                "api_key": "",
+            })
 
     def _apply_prerequisites_result(self, ffmpeg_ok: bool, ffmpeg_msg: str, api_key: str):
         """Áp dụng kết quả kiểm tra prerequisites lên UI (chạy trên main thread)."""
@@ -1557,6 +1569,8 @@ class AppWindow(_BaseWindow):
                 hover_color=APPLE_GREEN_BG,
                 text_color=APPLE_GREEN,
             )
+            if api_key and self.file_path_var.get().strip():
+                self.btn_start.configure(state="normal")
         else:
             self.badge_ffmpeg.configure(
                 text="❌ FFmpeg: Thiếu (Bấm tải)",
@@ -1564,7 +1578,7 @@ class AppWindow(_BaseWindow):
                 hover_color=APPLE_RED_BG,
                 text_color=APPLE_RED,
             )
-            self._log_msg(f"❌ {msg}")
+            self._log_msg(f"❌ {ffmpeg_msg}")
             self._log_msg("💡 Mẹo: Bấm vào huy hiệu '❌ FFmpeg: Thiếu (Bấm tải)' ở góc trên để tải tự động 1-click!")
             self.btn_start.configure(state="disabled")
 
@@ -1574,8 +1588,6 @@ class AppWindow(_BaseWindow):
                 fg_color=APPLE_GREEN_BG,
                 text_color=APPLE_GREEN,
             )
-            if ffmpeg_ok:
-                self.btn_start.configure(state="normal")
         else:
             self.badge_api.configure(
                 text="⚠️ Gemini: Chưa có Key",
@@ -2208,6 +2220,13 @@ class AppWindow(_BaseWindow):
                         self._set_active_step(3)
                     elif "ghép" in text_lower or "render" in text_lower or "encode" in text_lower or "gắn phụ đề" in text_lower:
                         self._set_active_step(4)
+
+                elif msg_type == "prerequisites_result":
+                    self._apply_prerequisites_result(
+                        ffmpeg_ok=msg.get("ffmpeg_ok", False),
+                        ffmpeg_msg=msg.get("ffmpeg_msg", ""),
+                        api_key=msg.get("api_key", ""),
+                    )
 
                 elif msg_type == "progress":
                     val = msg["value"]
