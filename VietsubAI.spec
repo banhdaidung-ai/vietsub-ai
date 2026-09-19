@@ -56,7 +56,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'tkinter.test', 'unittest', 'test', 'tests',
+        'tkinter.test', 'test', 'tests',
         'email.test', 'xmlrpc', 'pydoc', 'sqlite3',
         'matplotlib', 'scipy', 'pandas',
         'static_ffmpeg',

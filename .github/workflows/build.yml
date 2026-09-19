@@ -41,6 +41,16 @@ jobs:
               cp bin/ffmpeg "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
           fi
           find "dist/VietsubAI.app" -name "*ffprobe*" -delete 2>/dev/null || true
+          # Dọn rác triệt để tối ưu dung lượng macOS
+          APP_FW="dist/VietsubAI.app/Contents/Frameworks"
+          APP_RES="dist/VietsubAI.app/Contents/Resources"
+          rm -rf "$APP_FW/torch/bin/protoc"* 2>/dev/null || true
+          rm -rf "$APP_RES/torch/testing" "$APP_RES/torch/_inductor" "$APP_RES/torch/_dynamo" "$APP_RES/torch/_export" "$APP_RES/torch/_functorch" "$APP_RES/torch/onnx" "$APP_RES/torch/ao" 2>/dev/null || true
+          find "dist/VietsubAI.app" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find "dist/VietsubAI.app" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          rm -f "$APP_RES/assets/icon.icns" 2>/dev/null || true
+          find "dist/VietsubAI.app" -name "*.pyc" -delete 2>/dev/null || true
+          rm -f "$APP_FW/torch/bin/torch_shm_manager" 2>/dev/null || true
           mkdir -p dist/dmg_temp
           cp -R "dist/VietsubAI.app" "dist/dmg_temp/"
           ln -s /Applications "dist/dmg_temp/Applications"
@@ -94,7 +104,15 @@ jobs:
               Copy-Item "bin\ffmpeg.exe" -Destination "dist\VietsubAI\" -Force
           }
           Get-ChildItem -Path "dist\VietsubAI" -Filter "*ffprobe*" -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
-          Write-Host "Đã tối ưu: Đảm bảo 1 bản ffmpeg.exe duy nhất, loại bỏ hoàn toàn ffprobe!"
+          # Dọn rác tối ưu dung lượng Windows
+          $internal = "dist\VietsubAI\_internal"
+          if (Test-Path "$internal\torch\test") { Remove-Item -Recurse -Force "$internal\torch\test" -ErrorAction SilentlyContinue }
+          if (Test-Path "$internal\torch\testing") { Remove-Item -Recurse -Force "$internal\torch\testing" -ErrorAction SilentlyContinue }
+          if (Test-Path "$internal\torch\_inductor") { Remove-Item -Recurse -Force "$internal\torch\_inductor" -ErrorAction SilentlyContinue }
+          if (Test-Path "$internal\torch\_dynamo") { Remove-Item -Recurse -Force "$internal\torch\_dynamo" -ErrorAction SilentlyContinue }
+          Get-ChildItem -Path "dist\VietsubAI" -Filter "*.dist-info" -Directory -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Path "dist\VietsubAI" -Filter "__pycache__" -Directory -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host "Đã tối ưu: Đảm bảo 1 bản ffmpeg.exe duy nhất, loại bỏ hoàn toàn ffprobe và file thừa!"
 
       - name: Zip Windows Build
         shell: pwsh
@@ -133,25 +151,25 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.9' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.9 — Tối Ưu Dung Lượng Siêu Nhẹ (Giảm 70%) & Hoàn Thiện Âm Thanh' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.9 — Tích Hợp Demucs AI Nội Bộ & Tối Ưu Toàn Diện' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.0.9 — Tối Ưu Dung Lượng Siêu Nhẹ & Tinh Chỉnh Âm Thanh
+            ## 🎉 Bản Phát Hành Vietsub AI v1.0.9 — Tích Hợp Demucs AI Nội Bộ & Tối Ưu Toàn Diện
 
-            Phiên bản v1.0.9 mang đến bước tiến đột phá về tối ưu hóa bộ cài đặt, giảm hơn 70% dung lượng tệp cài đặt và nâng cấp toàn diện chất lượng giọng đọc AI:
+            Phiên bản v1.0.9 nâng cấp lớn về tính ổn định tách nhạc/lời, tối ưu dung lượng bộ cài đặt và hoàn thiện âm thanh AI:
+
+            - **🧠 Tích Hợp Demucs Python API Nội Bộ (Frozen Builds):**
+              - Chuyển hoàn toàn từ gọi CLI subprocess sang gọi trực tiếp Python API `demucs.separate.main()` trong bản đóng gói.
+              - Khắc phục triệt để lỗi "không tìm thấy lệnh demucs" khi chạy từ file .app / .exe.
+              - Tự động fallback MPS → CPU nếu phần cứng GPU không hỗ trợ toán tử.
             - **📦 Tối Ưu Dung Lượng Cài Đặt Siêu Nhẹ (Giảm ~70%):**
-              - Tinh chỉnh sâu tiến trình PyInstaller, loại bỏ triệt để hàng trăm MB thư viện thừa và bộ nhúng không cần thiết.
+              - Tinh chỉnh sâu PyInstaller, loại bỏ triệt để hàng trăm MB thư viện thừa (torch testing, inductor, dynamo, protoc, .dist-info, __pycache__).
               - Giảm dung lượng file cài đặt macOS `.dmg` từ **282MB xuống còn ~80MB**.
               - Giảm dung lượng file nén Windows `.zip` từ **228MB xuống còn ~80MB**.
-              - Tốc độ tải về cực nhanh, giải nén nhẹ nhàng và tiết kiệm tài nguyên bộ nhớ tối đa.
-            - **🗣️ Khắc Phục Triệt Để Giọng Thoại Câu Được Câu Mất (TTS Phương Án A):**
-              - Tăng số lần thử lại (retry) Edge-TTS lên 5 lần với cơ chế giãn cách tăng dần (exponential backoff).
-              - Tự động bù đắp khoảng lặng (silence segment) giữ nguyên timeline video nếu gặp câu thoại lỗi mạng, đảm bảo 100% các câu thoại sau không bị lệch khớp phụ đề.
-              - Cơ chế dự phòng thông minh (Gemini ➔ Edge-TTS) từng câu đơn lẻ: bù đắp bằng Microsoft AI tức thì mà không gián đoạn tiến trình.
-              - Thêm độ trễ điều phối (pacing delay) chống ngắt kết nối WebSocket do tường lửa/Windows Defender.
-            - **🎯 Tính Năng Kéo Thả Tiện Lợi (Drag & Drop):**
-              - Tích hợp thư viện kéo thả tệp hiện đại, hỗ trợ thả trực tiếp video hoặc âm thanh từ Finder / File Explorer vào ứng dụng.
-            - **⚡ Khởi Động Tức Thì (Zero Delay):**
-              - Áp dụng cơ chế **Lazy-Loading** cho toàn bộ các module nặng, mở ứng dụng tức thì chỉ trong 0.08 giây.
+            - **🗣️ Khắc Phục Triệt Để Giọng Thoại Câu Được Câu Mất (TTS):**
+              - Retry Edge-TTS 5 lần với exponential backoff, bù đắp khoảng lặng giữ nguyên timeline.
+              - Dự phòng thông minh Gemini ➔ Edge-TTS từng câu đơn lẻ.
+            - **🎯 Kéo Thả Tệp (Drag & Drop) trực tiếp từ Finder / File Explorer.**
+            - **⚡ Khởi Động Tức Thì** với Lazy-Loading toàn bộ module nặng (0.08s).
             - **🎬 Đầy Đủ Preset Phụ Đề CapCut, Tách Lời & Nhạc Beat, Tải Video Douyin 1080p.**
             - **📦 Bộ Cài Đặt Tích Hợp Sẵn FFmpeg 100% Offline.**
 
