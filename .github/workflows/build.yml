@@ -144,26 +144,26 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.1.0' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.1.0 — Tải Video Xiaohongshu & Ổn Định Toàn Diện' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.1.1' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.1.1 — Sửa Lỗi Tải Video & Khắc Phục Treo Render' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.1.0 — Hỗ Trợ Tải Xiaohongshu & Ổn Định Toàn Diện
+            ## 🎉 Bản Phát Hành Vietsub AI v1.1.1 — Khắc Phục Toàn Diện Lỗi Tải Video & Treo Render
 
-            Phiên bản v1.1.0 mang đến các cải tiến quan trọng về tính năng tải video trực tuyến và độ ổn định hệ thống:
+            Phiên bản v1.1.1 giải quyết triệt để 2 lỗi nghiêm trọng khi chạy trên Windows:
 
-            - **📥 Hỗ Trợ Chuyên Biệt Xiaohongshu (小红书 / XHS):**
-              - Giải mã liên kết thông minh: hỗ trợ link rút gọn `xhslink.com`, link đầy đủ `xiaohongshu.com` hoặc dán trực tiếp đoạn văn bản chia sẻ kèm tiếng Trung từ ứng dụng di động.
-              - Bảo toàn 100% token bảo mật `xsec_token`, tải trực tiếp video gốc Full HD 1080p sắc nét và trích xuất nhạc MP3 320kbps siêu tốc.
-            - **⚡ Khắc Phục Triệt Để Treo Đơ Lồng Tiếng TTS trên Windows:**
-              - Tối ưu hóa `WindowsSelectorEventLoopPolicy` cho WebSocket của Edge-TTS, ngăn ngừa xung đột luồng và lỗi mạng ngầm trên Windows.
-              - Tăng timeout kết nối/nhận dữ liệu, bổ sung cơ chế timeout bảo vệ tiến trình trong luồng độc lập, giao diện luôn mượt mà.
-            - **🧠 Tích Hợp Demucs Python API Nội Bộ & FFmpeg Offline Đầy Đủ:**
-              - Tách nhạc nền & giọng nói AI ngoại tuyến 100% không phụ thuộc môi trường ngoài.
-            - **📦 Bộ Cài Đặt Đã Được Tối Ưu Siêu Nhẹ (macOS DMG & Windows ZIP).**
+            - **⚡ Khắc Phục Triệt Để Treo Đơ Khi Render Video (FFmpeg OS Pipe Deadlock):**
+              - Giải quyết lỗi bộ đệm 64KB OS Pipe Buffer trên Windows: thêm luồng độc lập đọc và giải phóng stream `stderr` liên tục, ngăn chặn FFmpeg bị hệ điều hành đóng băng ở 77%.
+              - Cập nhật % tiến trình render thực tế theo thời gian thực trực quan trên giao diện (`Đang render video: 45% (15s/33s)...`).
+              - Chuyển preset mã hóa video sang `-preset fast`, tăng tốc độ xuất video nhanh hơn gấp 2–3 lần.
+            - **📥 Sửa Lỗi `No package metadata was found for curl_cffi`:**
+              - Khắc phục lỗi không tải được video từ link (Pinterest, Douyin, YouTube, v.v.) do thiếu metadata gói thư viện trong bản đóng gói.
+              - Hot-patch metadata an toàn ngay khi khởi động và chuyển sang cơ chế lazy import.
+            - **📦 Tích Hợp Đầy Đủ FFmpeg 7.1 & Demucs AI Nội Bộ:**
+              - Chạy độc lập 100% không yêu cầu người dùng phải cài thêm bất kỳ công cụ ngoài nào.
 
             ### 📥 Tải xuống cài đặt:
             - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.
-            - **Windows:** Tải file `VietsubAI-Windows.zip` bên dưới, giải nén và mở file `VietsubAI.exe` để chạy ngay (100% Offline).
+            - **Windows:** Tải file `VietsubAI-Windows.zip` bên dưới, giải nén và mở file `VietsubAI.exe` để chạy ngay (100% Portable).
           draft: false
           prerelease: false
           files: |
