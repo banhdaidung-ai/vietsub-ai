@@ -24,6 +24,7 @@ from gui.settings_dialog import SettingsDialog
 from gui.completion_dialog import CompletionDialog, _fmt_size
 from gui.subtitle_editor_dialog import SubtitleEditorDialog
 from gui.audio_separator_dialog import AudioSeparatorDialog
+from gui.guide_view import GuideView
 from utils.config import get_output_dir, load_config, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
 from utils.subtitle_styles import (
@@ -103,8 +104,8 @@ class AppWindow(_BaseWindow):
         super().__init__()
 
         self.title("Vietsub AI Studio — macOS Edition")
-        self.geometry("950x810")
-        self.minsize(900, 740)
+        self.geometry("980x830")
+        self.minsize(920, 750)
         self.configure(fg_color=BG_WINDOW)
 
         self.config = load_config()
@@ -163,11 +164,12 @@ class AppWindow(_BaseWindow):
             border_color=BORDER_HEADER,
         )
         header_card.grid(row=0, column=0, sticky="ew", padx=20, pady=(12, 8))
+        header_card.grid_columnconfigure(0, weight=1)
         header_card.grid_columnconfigure(1, weight=1)
 
-        # Left: Brand Logo & Title
+        # Left (Row 0): Brand Logo & Title
         brand_frame = ctk.CTkFrame(header_card, fg_color="transparent")
-        brand_frame.grid(row=0, column=0, sticky="w", padx=16, pady=10)
+        brand_frame.grid(row=0, column=0, sticky="w", padx=16, pady=(10, 4))
 
         # Load Icon
         try:
@@ -213,9 +215,31 @@ class AppWindow(_BaseWindow):
             text_color=TEXT_SECONDARY,
         ).pack(anchor="w")
 
-        # Right: System Health Badges & Controls
+        # Right (Row 0): System Health Badges & Controls
         controls_frame = ctk.CTkFrame(header_card, fg_color="transparent")
-        controls_frame.grid(row=0, column=2, sticky="e", padx=16, pady=10)
+        controls_frame.grid(row=0, column=1, sticky="e", padx=16, pady=(10, 4))
+
+        # Bottom (Row 1 - Spanning across): Main Navigation Tabs (Studio vs Hướng Dẫn)
+        nav_container = ctk.CTkFrame(header_card, fg_color="transparent")
+        nav_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(4, 10))
+
+        self.nav_tabs = ctk.CTkSegmentedButton(
+            nav_container,
+            values=["🎬 Studio Làm Việc", "📖 Hướng Dẫn Sử Dụng"],
+            command=self._on_main_nav_changed,
+            font=("Arial", 12, "bold"),
+            height=34,
+            width=360,
+            corner_radius=8,
+            fg_color=BG_INSET,
+            selected_color=APPLE_BLUE,
+            selected_hover_color=APPLE_BLUE_HOVER,
+            unselected_color=BG_INSET,
+            unselected_hover_color=BG_PILL,
+            text_color=TEXT_PRIMARY,
+        )
+        self.nav_tabs.set("🎬 Studio Làm Việc")
+        self.nav_tabs.pack(anchor="center")
 
         # Status Badges
         self.badge_ffmpeg = ctk.CTkButton(
@@ -1066,6 +1090,30 @@ class AppWindow(_BaseWindow):
             text_color=TEXT_TERTIARY,
         ).pack(side="right")
 
+        # ── Quản lý các widget Studio để hỗ trợ chuyển tab an toàn (Zero-Regression) ──
+        self.settings_card = settings_card
+        self.tracker_card = tracker_card
+        self.log_card = log_card
+        self.footer_card = footer_card
+        self.credit_bar = credit_bar
+
+        self._studio_widgets = [
+            self.input_card,
+            self.settings_card,
+            self.tracker_card,
+            self.log_card,
+            self.footer_card,
+            self.credit_bar,
+        ]
+        self._studio_grid_info = {w: w.grid_info() for w in self._studio_widgets}
+
+        # Khởi tạo Landing Page Hướng Dẫn Sử Dụng
+        self.guide_view = GuideView(
+            self,
+            on_start_clicked=lambda: self._switch_to_tab("🎬 Studio Làm Việc"),
+        )
+        self.guide_view.grid_remove()
+
         # Khởi tạo tính năng Kéo & Thả (Drag & Drop)
         self._setup_drag_and_drop()
 
@@ -1162,6 +1210,10 @@ class AppWindow(_BaseWindow):
 
         if ext not in media_exts:
             self._log_msg(f"⚠️ Tệp '{os.path.basename(first_file)}' có định dạng '{ext}' có thể không được hỗ trợ. Đã nạp đường dẫn để thử xử lý.")
+
+        # Tự động chuyển về Tab Studio nếu đang ở Tab Hướng Dẫn
+        if hasattr(self, "nav_tabs"):
+            self._switch_to_tab("🎬 Studio Làm Việc")
 
         # Tự động chuyển về tab Chọn File nếu người dùng đang ở tab Link Online
         if hasattr(self, "tabview"):
@@ -1261,6 +1313,46 @@ class AppWindow(_BaseWindow):
 
     def _reset_steps(self):
         self._set_active_step(0)
+
+    def _on_main_nav_changed(self, selected_tab: str):
+        """Xử lý sự kiện khi người dùng nhấn chuyển Tab ở thanh điều hướng trên cùng."""
+        self._switch_to_tab(selected_tab)
+
+    def _switch_to_tab(self, tab_name: str):
+        """Chuyển đổi giao diện giữa Studio Làm Việc và Hướng Dẫn Sử Dụng an toàn 100%."""
+        if hasattr(self, "nav_tabs") and self.nav_tabs.get() != tab_name:
+            self.nav_tabs.set(tab_name)
+
+        if "Hướng Dẫn" in tab_name:
+            # Ẩn toàn bộ widget của Studio
+            for w in getattr(self, "_studio_widgets", []):
+                try:
+                    w.grid_remove()
+                except Exception:
+                    pass
+            # Cấu hình grid row để GuideView chiếm trọn chiều cao
+            self.grid_rowconfigure(4, weight=0)
+            self.grid_rowconfigure(1, weight=1)
+            # Hiển thị GuideView
+            if hasattr(self, "guide_view"):
+                self.guide_view.grid(row=1, column=0, rowspan=6, sticky="nsew", padx=20, pady=(0, 8))
+        else:
+            # Ẩn GuideView
+            if hasattr(self, "guide_view"):
+                try:
+                    self.guide_view.grid_remove()
+                except Exception:
+                    pass
+            # Khôi phục cấu hình grid row Studio (row 4 log_card nhận weight=1)
+            self.grid_rowconfigure(1, weight=0)
+            self.grid_rowconfigure(4, weight=1)
+            # Khôi phục toàn bộ widget Studio về vị trí ban đầu
+            for w in getattr(self, "_studio_widgets", []):
+                try:
+                    w.grid()
+                except Exception:
+                    if hasattr(self, "_studio_grid_info") and w in self._studio_grid_info:
+                        w.grid(**self._studio_grid_info[w])
 
     def _on_tab_changed(self):
         """Gọi khi chuyển đổi giữa tab Chọn File và tab Link Online."""

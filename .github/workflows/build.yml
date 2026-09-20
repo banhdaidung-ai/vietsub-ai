@@ -145,25 +145,25 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.1.0' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.1.0 — Cố Định 1 Giọng Đọc & Khắc Phục Lỗi Tải Video, Treo Render' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.2.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.2.0 — Tích Hợp Tab Hướng Dẫn Sử Dụng & Tối Ưu Giao Diện' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.1.0 — Cố Định 1 Giọng Đọc & Khắc Phục Toàn Diện Lỗi Render
+            ## 🎉 Bản Phát Hành Vietsub AI v1.2.0 — Tích Hợp Tab Hướng Dẫn Sử Dụng (Landing Page) & Tối Ưu Giao Diện
 
-            Phiên bản v1.1.0 mang đến các cải tiến và sửa lỗi quan trọng:
+            Phiên bản v1.2.0 mang đến các cải tiến trải nghiệm người dùng vượt bậc:
 
-            - **🎙️ Khóa Cố Định 1 Giọng Đọc Duy Nhất & Tự Động Thử Lại Khi Ngắt Kết Nối:**
-              - Tuyệt đối giữ nguyên 100% đúng một giọng đọc đã chọn (loại bỏ việc tự động tráo đổi giọng nam/nữ hoặc chuyển sang giọng robot macOS Linh hay Gemini AI).
-              - Tự động kiên trì thử lại khi bị ngắt kết nối WebSocket/mạng cho đến khi thành công 100% câu từ.
-            - **⚡ Khắc Phục Triệt Để Treo Đơ Khi Render Video (FFmpeg OS Pipe Deadlock):**
-              - Giải quyết lỗi bộ đệm 64KB OS Pipe Buffer trên Windows: thêm luồng độc lập đọc và giải phóng stream `stderr` liên tục, ngăn chặn FFmpeg bị hệ điều hành đóng băng ở 77%.
-              - Cập nhật % tiến trình render thực tế theo thời gian thực trực quan trên giao diện (`Đang render video: 45% (15s/33s)...`).
-              - Chuyển preset mã hóa video sang `-preset fast`, tăng tốc độ xuất video nhanh hơn gấp 2–3 lần.
-            - **📥 Sửa Lỗi `No package metadata was found for curl_cffi`:**
-              - Khắc phục lỗi không tải được video từ link (Pinterest, Douyin, YouTube, v.v.) do thiếu metadata gói thư viện trong bản đóng gói.
-              - Hot-patch metadata an toàn ngay khi khởi động và chuyển sang cơ chế lazy import.
-            - **📦 Tích Hợp Đầy Đủ FFmpeg 7.1 & Demucs AI Nội Bộ:**
-              - Chạy độc lập 100% không yêu cầu người dùng phải cài thêm bất kỳ công cụ ngoài nào.
+            - **📖 Bổ Sung Tab Hướng Dẫn Sử Dụng Đẳng Cấp (Landing Page):**
+              - Tích hợp trang Landing Page giới thiệu toàn bộ tính năng và hướng dẫn chi tiết ngay trong ứng dụng.
+              - Bao gồm: Tổng quan quy trình 4 bước, chi tiết 6 phân hệ cốt lõi, bảng tra cứu nhanh theo nhu cầu (Cheat Sheet Matrix), bí kíp sử dụng Pro & phím tắt, giải đáp thắc mắc thường gặp (FAQ).
+              - Tối ưu cuộn chuột siêu mượt và siêu nhạy cho cả chuột con lăn rời và trackpad trên macOS và Windows.
+            - **🎬 Cơ Chế Chuyển Đổi Tab Studio & Hướng Dẫn An Toàn 100% (Zero-Regression):**
+              - Bố trí thanh chuyển tab 2 tầng chuyên nghiệp trên Header Card, không bị che khuất ở bất kỳ kích thước màn hình nào.
+              - Giữ nguyên vẹn 100% tiến trình, log và trạng thái công việc khi chuyển qua lại giữa các tab.
+              - Hỗ trợ kéo thả video tự động chuyển về Tab Studio để làm việc ngay lập tức.
+            - **🎙️ Khóa Cố Định 1 Giọng Đọc & Ổn Định Tuyệt Đối:**
+              - Duy trì ổn định giọng đọc Microsoft Edge Neural (Hoài My truyền cảm, Nam Minh trầm ấm) với cơ chế tự động thử lại khi gián đoạn mạng.
+            - **⚡ Hiệu Năng & Ổn Định:**
+              - Tích hợp FFmpeg 7.1, Demucs AI và pipeline render video mượt mà, không gián đoạn.
 
             ### 📥 Tải xuống cài đặt:
             - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.
