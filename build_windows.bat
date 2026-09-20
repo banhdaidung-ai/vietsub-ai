@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================================
-echo       Đóng gói Vietsub AI v1.1.1 cho Windows
+echo       Đóng gói Vietsub AI v1.1.0 cho Windows
 echo ========================================================
 echo.
 
@@ -73,19 +73,19 @@ del /s /q "dist\VietsubAI\*.pyc" >nul 2>nul
 
 :: Tạo file ZIP để dễ chia sẻ
 echo.
-echo     Đang nén thành VietsubAI_Windows_v1.1.1.zip...
-if exist "dist\VietsubAI_Windows_v1.1.1.zip" del /q "dist\VietsubAI_Windows_v1.1.1.zip"
-powershell -Command "Compress-Archive -Path 'dist\VietsubAI' -DestinationPath 'dist\VietsubAI_Windows_v1.1.1.zip' -CompressionLevel Optimal" 2>nul
-if exist "dist\VietsubAI_Windows_v1.1.1.zip" (
-    echo     [OK] Da tao thanh cong: dist\VietsubAI_Windows_v1.1.1.zip
-    powershell -Command "Write-Host ('    Dung luong ZIP: ' + [math]::Round((Get-Item dist\VietsubAI_Windows_v1.1.1.zip).Length / 1MB, 1) + ' MB')"
+echo     Đang nén thành VietsubAI_Windows_v1.1.0.zip...
+if exist "dist\VietsubAI_Windows_v1.1.0.zip" del /q "dist\VietsubAI_Windows_v1.1.0.zip"
+powershell -Command "Compress-Archive -Path 'dist\VietsubAI' -DestinationPath 'dist\VietsubAI_Windows_v1.1.0.zip' -CompressionLevel Optimal" 2>nul
+if exist "dist\VietsubAI_Windows_v1.1.0.zip" (
+    echo     [OK] Da tao thanh cong: dist\VietsubAI_Windows_v1.1.0.zip
+    powershell -Command "Write-Host ('    Dung luong ZIP: ' + [math]::Round((Get-Item dist\VietsubAI_Windows_v1.1.0.zip).Length / 1MB, 1) + ' MB')"
 )
 
 echo.
 echo ========================================================
-echo  HOÀN TẤT ĐÓNG GÓI WINDOWS v1.1.1!
+echo  HOÀN TẤT ĐÓNG GÓI WINDOWS v1.1.0!
 echo  Thư mục app : dist\VietsubAI\VietsubAI.exe
-echo  File ZIP    : dist\VietsubAI_Windows_v1.1.1.zip
+echo  File ZIP    : dist\VietsubAI_Windows_v1.1.0.zip
 echo ==========================================================
 echo Sếp chạy thẳng VietsubAI.exe hoặc nén ZIP gửi đi test nhé!
 pause
