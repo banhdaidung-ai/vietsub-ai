@@ -15,6 +15,13 @@ hiddenimports = [
     'pydantic',
     'pydantic_core',
     'pydantic.deprecated.decorator',
+    # Core modules - đảm bảo luôn được đóng gói
+    'core.xhs_downloader',
+    'core.downloader',
+    'core.douyin',
+    'core.pipeline',
+    'core.tts_generator',
+    'core.gemini_processor',
 ]
 
 for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs', 'julius', 'lameenc', 'sphn', 'safetensors', 'einops']:
@@ -126,8 +133,8 @@ if is_mac:
             'CFBundleName': 'Vietsub AI',
             'CFBundleDisplayName': 'Vietsub AI',
             'CFBundleIdentifier': 'com.vietsubai.app',
-            'CFBundleVersion': '1.0.9',
-            'CFBundleShortVersionString': '1.0.9',
+            'CFBundleVersion': '1.1.0',
+            'CFBundleShortVersionString': '1.1.0',
             'NSHighResolutionCapable': True,
             'LSMinimumSystemVersion': '11.0',
             'NSHumanReadableCopyright': 'Copyright © 2026 Vietsub AI',

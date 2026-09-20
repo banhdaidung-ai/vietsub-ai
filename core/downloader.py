@@ -83,6 +83,19 @@ class VideoDownloader:
             )
             return self._downloaded_path
 
+        # ── HỖ TRỢ CHUYÊN BIỆT: Xiaohongshu (小红书 / XHS) ──
+        from core.xhs_downloader import XHSDownloader
+        if XHSDownloader.is_xhs_url(url_clean):
+            try:
+                self._report(0.02, "Đang giải mã liên kết Xiaohongshu...")
+                resolved_xhs = XHSDownloader.resolve_xhs_url(url_clean)
+                if resolved_xhs:
+                    url_clean = resolved_xhs
+                self._report(0.04, "Đã nhận dạng video Xiaohongshu, đang kết nối...")
+            except Exception:
+                pass
+
+
         def progress_hook(d: dict):
             if self.is_cancelled and self.is_cancelled():
                 raise InterruptedError("Tiến trình tải đã bị hủy.")
@@ -135,7 +148,9 @@ class VideoDownloader:
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/128.0.0.0 Safari/537.36"
                 ),
-                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,vi;q=0.7",
+                "Sec-Fetch-Mode": "navigate",
             },
         }
 
@@ -158,7 +173,37 @@ class VideoDownloader:
         except (InterruptedError, KeyboardInterrupt):
             raise InterruptedError("Tiến trình tải đã bị hủy.")
         except Exception as e:
+            err_msg = str(e)
+
+            # ── FALLBACK: Nếu yt-dlp thất bại với XHS URL → thử XHSDownloader chuyên dụng ──
+            from core.xhs_downloader import XHSDownloader
+            if XHSDownloader.is_xhs_url(url_clean):
+                try:
+                    self._report(0.05, "Đang thử phương thức tải dự phòng Xiaohongshu...")
+                    xhs_dl = XHSDownloader()
+                    self._downloaded_path = xhs_dl.download_video(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        quality=quality,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+                except (InterruptedError, KeyboardInterrupt):
+                    raise InterruptedError("Tiến trình tải đã bị hủy.")
+                except Exception as xhs_err:
+                    raise RuntimeError(str(xhs_err))
+            elif "Unsupported URL" in err_msg:
+                # Trích xuất tên domain để thông báo rõ ràng hơn
+                domain_match = re.search(r"https?://([^/\s]+)", err_msg)
+                domain = domain_match.group(1) if domain_match else "này"
+                raise RuntimeError(
+                    f"Nền tảng '{domain}' chưa được hỗ trợ tải trực tiếp.\n"
+                    "Hỗ trợ hiện tại: TikTok, Douyin, YouTube, Facebook, Instagram, Bilibili, Xiaohongshu (công khai).\n"
+                    "Bạn có thể tải thủ công rồi dùng 'Chọn File Video Trên Máy'."
+                )
             raise RuntimeError(f"Không thể tải video từ link: {e}")
+
 
         # Fallback: extension có thể đổi sau khi merge
         if self._downloaded_path:
@@ -519,6 +564,16 @@ class VideoDownloader:
         if clean_extracted:
             url_clean = clean_extracted
 
+        # Hỗ trợ Xiaohongshu khi tải chỉ âm thanh
+        from core.xhs_downloader import XHSDownloader
+        if XHSDownloader.is_xhs_url(url_clean):
+            try:
+                resolved_xhs = XHSDownloader.resolve_xhs_url(url_clean)
+                if resolved_xhs:
+                    url_clean = resolved_xhs
+            except Exception:
+                pass
+
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": str(Path(output_dir) / "%(title).100s.%(ext)s"),
@@ -536,7 +591,9 @@ class VideoDownloader:
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/128.0.0.0 Safari/537.36"
                 ),
-                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,vi;q=0.7",
+                "Sec-Fetch-Mode": "navigate",
             },
         }
 

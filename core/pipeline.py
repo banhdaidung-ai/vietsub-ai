@@ -259,6 +259,7 @@ class Pipeline:
                 tech_display = f"Microsoft AI ({chosen_voice})"
 
             self._log(f"🗣️ Đang tạo giọng đọc [{tech_display}]...")
+            self._log(f"ℹ️ Số phân đoạn cần lồng tiếng: {len(segments)} câu. Dự kiến ~{len(segments) * 1.5 / 60:.1f} phút...")
             tts_audio = os.path.join(tmp_dir, "tts_track.mp3")
 
             tts = TTSGenerator(
@@ -271,7 +272,43 @@ class Pipeline:
                 is_cancelled=lambda: self._cancelled,
                 log_callback=self._log,
             )
-            tts.generate_track(segments, total_duration, tts_audio)
+
+            # Giới hạn thời gian TTS tối đa 90 phút để tránh treo vô hạn trên Windows
+            tts_error = [None]
+            tts_done_event = threading.Event()
+
+            def _run_tts():
+                try:
+                    tts.generate_track(segments, total_duration, tts_audio)
+                except Exception as e:
+                    tts_error[0] = e
+                finally:
+                    tts_done_event.set()
+
+            tts_thread = threading.Thread(target=_run_tts, daemon=True)
+            tts_thread.start()
+
+            # Chờ tối đa 90 phút; kiểm tra cancel mỗi 2s
+            TTS_TIMEOUT_SEC = 5400  # 90 phút
+            waited = 0
+            while not tts_done_event.is_set():
+                if self._cancelled:
+                    break
+                tts_done_event.wait(timeout=2.0)
+                waited += 2
+                if waited >= TTS_TIMEOUT_SEC:
+                    self._log(f"⚠️ Lồng tiếng quá {TTS_TIMEOUT_SEC // 60} phút. Dừng để tránh treo ứng dụng.")
+                    tts_error[0] = TimeoutError(
+                        f"Lồng tiếng quá {TTS_TIMEOUT_SEC // 60} phút (timeout bảo vệ trên Windows).\n"
+                        "Vui lòng thử lại với video ngắn hơn hoặc bật lại kết nối mạng."
+                    )
+                    break
+
+            if tts_error[0]:
+                raise tts_error[0]
+
+            if self._cancelled:
+                raise InterruptedError("Đã hủy bởi người dùng.")
             self._log("✅ Tạo giọng đọc xong")
             self._progress(0.75, "Tạo giọng xong")
         else:

@@ -72,9 +72,38 @@ class TTSGenerator:
         Tạo một audio track hoàn chỉnh, ghép từ các đoạn TTS
         với timing khớp chính xác theo timestamp SRT.
         """
-        asyncio.run(
+        self._run_asyncio_safe(
             self._generate_track_async(segments, total_duration_sec, output_path)
         )
+
+    @staticmethod
+    def _run_asyncio_safe(coro):
+        """
+        Chạy coroutine an toàn trên cả macOS và Windows.
+        — Trên Windows + PyInstaller: ProactorEventLoop có thể xúng đột với WebSocket của edge-tts.
+          → Bắt buộc dùng WindowsSelectorEventLoopPolicy trước khi tạo event loop mới.
+        — Trên macOS/Linux: dùng asyncio.run() đơn giản.
+        Trả về kết quả của coroutine.
+        """
+        import sys
+        import asyncio
+        if sys.platform == "win32":
+            # Fix: dùng SelectorEventLoop thay vì ProactorEventLoop trên Windows
+            # để tránh lỗi WinError 995 / RuntimeError khi chạy WebSocket trong background thread
+            policy = asyncio.WindowsSelectorEventLoopPolicy()
+            asyncio.set_event_loop_policy(policy)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                try:
+                    loop.close()
+                except Exception:
+                    pass
+                asyncio.set_event_loop(None)
+        else:
+            return asyncio.run(coro)
 
     def _smooth_segment_text(self, text: str, is_mid_sentence: bool = False) -> str:
         """
@@ -109,9 +138,9 @@ class TTSGenerator:
             except Exception:
                 pass
             # Fallback sang Edge-TTS
-            return asyncio.run(self._generate_single_edge_tts(tts_text, out_path))
+            return self._run_asyncio_safe(self._generate_single_edge_tts(tts_text, out_path))
         else:
-            return asyncio.run(self._generate_single_edge_tts(tts_text, out_path))
+            return self._run_asyncio_safe(self._generate_single_edge_tts(tts_text, out_path))
 
     def _prepare_text_for_edge_tts(self, text: str, is_mid_sentence: bool = False) -> str:
         """
@@ -252,8 +281,8 @@ class TTSGenerator:
                     voice=current_voice,
                     rate=current_rate,
                     pitch=current_pitch,
-                    connect_timeout=12,
-                    receive_timeout=25,
+                    connect_timeout=20,
+                    receive_timeout=45,
                 )
                 await communicate.save(out_path)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
@@ -556,8 +585,9 @@ class TTSGenerator:
                         tts_success_count += 1
                         seg_paths.append((seg, seg_path))
 
-                    # Nghỉ 650ms giữa các câu để chống Microsoft WebSocket connection reset/rate limit
-                    await asyncio.sleep(0.65)
+                    # Nghỉ giữa các câu: giảm xuống 0.35s (vẫn đủ tránh Microsoft rate-limit)
+                    # Giảm từ 0.65s trước đây → tiết kiệm ~60s cho video 200 câu
+                    await asyncio.sleep(0.35)
 
             # Điều chỉnh tốc độ thông minh & Bảo toàn tone giọng phát thanh viên (Tempo Smoothing & Ripple Scheduling)
             adjusted_seg_paths = []
