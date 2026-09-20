@@ -146,27 +146,22 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.9' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.0.9 — Tích Hợp Demucs AI Nội Bộ & Tối Ưu Toàn Diện' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.1.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.1.0 — Tải Video Xiaohongshu & Ổn Định Toàn Diện' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.0.9 — Tích Hợp Demucs AI Nội Bộ & Tối Ưu Toàn Diện
+            ## 🎉 Bản Phát Hành Vietsub AI v1.1.0 — Hỗ Trợ Tải Xiaohongshu & Ổn Định Toàn Diện
 
-            Phiên bản v1.0.9 nâng cấp lớn về tính ổn định tách nhạc/lời, tối ưu dung lượng bộ cài đặt và hoàn thiện âm thanh AI:
+            Phiên bản v1.1.0 mang đến các cải tiến quan trọng về tính năng tải video trực tuyến và độ ổn định hệ thống:
 
-            - **🎙️ Tối Ưu Giọng Đọc Subviet Tự Nhiên & 100% Đầy Đủ Câu Từ:**
-              - Nhận diện vế câu nối tiếp thông minh (`is_clause_continuation`), giữ tone giọng phát thanh viên liền mạch, không bị nhảy tone hay tụt cao độ bừa bãi.
-              - Thuật toán Non-Colliding Ripple Timeline Scheduler: 100% câu từ được lồng tiếng đầy đủ, tuyệt đối không bị nuốt chữ hay cắt cụt âm thanh.
-              - Dự phòng 4 tầng (Edge-TTS 6 retries -> Gemini TTS -> macOS Linh -> Silence), chống rớt mạng hoàn hảo.
-            - **🧠 Tích Hợp Demucs Python API Nội Bộ (Frozen Builds):**
-              - Chuyển hoàn toàn từ gọi CLI subprocess sang gọi trực tiếp Python API `demucs.separate.main()` trong bản đóng gói.
-              - Khắc phục triệt để lỗi "không tìm thấy lệnh demucs" khi chạy từ file .app / .exe.
-              - Tự động fallback MPS → CPU nếu phần cứng GPU không hỗ trợ toán tử.
-            - **📦 Tối Ưu Dung Lượng Cài Đặt Siêu Nhẹ (Giảm ~70%):**
-              - Tinh chỉnh sâu PyInstaller, loại bỏ triệt để hàng trăm MB thư viện thừa (torch testing, inductor, dynamo, protoc, .dist-info, __pycache__).
-            - **🎯 Kéo Thả Tệp (Drag & Drop) trực tiếp từ Finder / File Explorer.**
-            - **⚡ Khởi Động Tức Thì** với Lazy-Loading toàn bộ module nặng (0.08s).
-            - **🎬 Đầy Đủ Preset Phụ Đề CapCut, Tách Lời & Nhạc Beat, Tải Video Douyin 1080p.**
-            - **📦 Bộ Cài Đặt Tích Hợp Sẵn FFmpeg 100% Offline.**
+            - **📥 Hỗ Trợ Chuyên Biệt Xiaohongshu (小红书 / XHS):**
+              - Giải mã liên kết thông minh: hỗ trợ link rút gọn `xhslink.com`, link đầy đủ `xiaohongshu.com` hoặc dán trực tiếp đoạn văn bản chia sẻ kèm tiếng Trung từ ứng dụng di động.
+              - Bảo toàn 100% token bảo mật `xsec_token`, tải trực tiếp video gốc Full HD 1080p sắc nét và trích xuất nhạc MP3 320kbps siêu tốc.
+            - **⚡ Khắc Phục Triệt Để Treo Đơ Lồng Tiếng TTS trên Windows:**
+              - Tối ưu hóa `WindowsSelectorEventLoopPolicy` cho WebSocket của Edge-TTS, ngăn ngừa xung đột luồng và lỗi mạng ngầm trên Windows.
+              - Tăng timeout kết nối/nhận dữ liệu, bổ sung cơ chế timeout bảo vệ tiến trình trong luồng độc lập, giao diện luôn mượt mà.
+            - **🧠 Tích Hợp Demucs Python API Nội Bộ & FFmpeg Offline Đầy Đủ:**
+              - Tách nhạc nền & giọng nói AI ngoại tuyến 100% không phụ thuộc môi trường ngoài.
+            - **📦 Bộ Cài Đặt Đã Được Tối Ưu Siêu Nhẹ (macOS DMG & Windows ZIP).**
 
             ### 📥 Tải xuống cài đặt:
             - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.
