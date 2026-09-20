@@ -86,23 +86,25 @@ def test_tts_generator_init_gemini():
     assert gen.api_key == "fake-test-key-12345"
 
 
-def test_gemini_fallback_to_edge_on_error():
-    """Kiểm tra cơ chế tự động chuyển đổi sang Microsoft AI khi Gemini gặp sự cố."""
+def test_gemini_single_voice_retention_and_no_fallback():
+    """Kiểm tra nguyên tắc giữ nguyên 1 giọng: Gemini AI không tự động chuyển sang Edge-TTS khi lỗi."""
     gen = TTSGenerator(
-        voice="Aoede",
+        voice="Charon",
         tts_technology="gemini",
-        api_key="invalid-key",
+        api_key="test-key",
     )
     
-    # Mock _generate_single_gemini_tts để giả lập ném ra lỗi (quota/mạng)
-    with patch.object(gen, "_generate_single_gemini_tts", side_effect=Exception("429 Quota Exceeded")):
+    # Mock _generate_single_gemini_tts trả về True (sau khi tự retry)
+    with patch.object(gen, "_generate_single_gemini_tts", return_value=True) as mock_gemini:
         with patch.object(gen, "_generate_single_edge_tts", return_value=True) as mock_edge:
-            out_file = os.path.join(tempfile.gettempdir(), "test_fallback.mp3")
+            out_file = os.path.join(tempfile.gettempdir(), "test_gemini_lock.mp3")
             success = gen.generate_single_segment("Xin chào Sếp", out_file)
             
             assert success is True
-            # Kiểm tra xem có tự động gọi sang Edge-TTS không
-            mock_edge.assert_called_once()
+            # Xác nhận gọi đúng Gemini TTS với đúng giọng đã chọn
+            mock_gemini.assert_called_once()
+            # Tuyệt đối KHÔNG được gọi sang Edge-TTS để tráo đổi giọng
+            mock_edge.assert_not_called()
 
 
 def test_settings_dialog_ui_switch():
@@ -386,3 +388,64 @@ async def test_ripple_timeline_scheduler_zero_truncation():
     assert seg1.start_ms == 0
     assert seg2.start_ms >= seg1.end_ms + 80
     assert seg3.start_ms >= seg2.end_ms + 80
+
+
+@pytest.mark.asyncio
+async def test_no_voice_switching_on_multiple_retries():
+    """Kiểm tra tuyệt đối không đổi giọng: Dù ngắt mạng và retry nhiều lần, giọng gửi tới Communicate không bao giờ đổi."""
+    gen = TTSGenerator(
+        voice="vi-VN-NamMinhNeural",
+        tts_technology="edge",
+    )
+
+    passed_voices = []
+
+    class MockCommunicate:
+        def __init__(self, *args, **kwargs):
+            passed_voices.append(kwargs.get("voice"))
+
+        async def save(self, out_path):
+            if len(passed_voices) < 6:
+                # Giả lập lỗi ngắt mạng 5 lần liên tiếp (bao gồm cả lần 4, 5, 6 mà trước đây từng bị đổi giọng)
+                raise Exception("Network connection disconnected")
+            with open(out_path, "wb") as f:
+                f.write(b"ok-audio-data")
+
+    tmp_out = os.path.join(tempfile.gettempdir(), "test_no_switch.mp3")
+    with patch("edge_tts.Communicate", side_effect=MockCommunicate):
+        with patch("asyncio.sleep", return_value=None):
+            success = await gen._generate_single_edge_tts("Câu kiểm tra cố định giọng", tmp_out)
+            assert success is True
+            assert len(passed_voices) == 6
+            # Đảm bảo TẤT CẢ 6 lần thử đều là vi-VN-NamMinhNeural, tuyệt đối không có Hoài My
+            assert all(v == "vi-VN-NamMinhNeural" for v in passed_voices)
+
+
+@pytest.mark.asyncio
+async def test_user_cancellation_breaks_retry_loop():
+    """Kiểm tra khi người dùng bấm Hủy (Cancel), vòng lặp retry ngắt ngay lập tức và ném InterruptedError."""
+    cancelled = False
+    gen = TTSGenerator(
+        voice="vi-VN-HoaiMyNeural",
+        tts_technology="edge",
+        is_cancelled=lambda: cancelled,
+    )
+
+    attempt_count = 0
+
+    class MockCommunicateFail:
+        def __init__(self, *args, **kwargs):
+            nonlocal attempt_count, cancelled
+            attempt_count += 1
+            if attempt_count >= 2:
+                cancelled = True  # Người dùng bấm dừng ở lần thử thứ 2
+
+        async def save(self, out_path):
+            raise Exception("Server timeout")
+
+    tmp_out = os.path.join(tempfile.gettempdir(), "test_cancel.mp3")
+    with patch("edge_tts.Communicate", side_effect=MockCommunicateFail):
+        with patch("asyncio.sleep", return_value=None):
+            with pytest.raises(InterruptedError):
+                await gen._generate_single_edge_tts("Test cancel", tmp_out)
+

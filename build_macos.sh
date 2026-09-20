@@ -55,6 +55,12 @@ if [ ! -f "dist/VietsubAI.app/Contents/MacOS/ffprobe" ] && [ -f "bin/ffprobe" ];
 fi
 chmod +x "dist/VietsubAI.app/Contents/MacOS/ffmpeg" "dist/VietsubAI.app/Contents/MacOS/ffprobe" 2>/dev/null || true
 
+# Dọn dẹp thư mục trung gian dist/VietsubAI (chỉ dùng cho bản raw, macOS chỉ cần .app và .dmg)
+if [ -d "dist/VietsubAI" ]; then
+    rm -rf "dist/VietsubAI"
+    echo "✂️  Đã dọn dẹp thư mục trung gian dist/VietsubAI (~700MB) để tối ưu ổ đĩa."
+fi
+
 # 6. DỌN RÁC AN TOÀN — Giảm dung lượng bundle mà không ảnh hưởng chức năng
 echo "🧹 Đang dọn rác để tối ưu dung lượng..."
 

@@ -43,6 +43,7 @@ jobs:
           fi
           chmod +x "dist/VietsubAI.app/Contents/MacOS/ffmpeg" "dist/VietsubAI.app/Contents/MacOS/ffprobe" 2>/dev/null || true
           # Dọn rác an toàn (giữ nguyên .dist-info để bảo toàn metadata cho curl_cffi)
+          rm -rf "dist/VietsubAI" 2>/dev/null || true
           APP_FW="dist/VietsubAI.app/Contents/Frameworks"
           APP_RES="dist/VietsubAI.app/Contents/Resources"
           rm -rf "$APP_FW/torch/bin/protoc"* 2>/dev/null || true
@@ -145,12 +146,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.1.0' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.1.0 — Bản Cập Nhật Khắc Phục Toàn Diện Lỗi Tải Video & Treo Render' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.1.0 — Cố Định 1 Giọng Đọc & Khắc Phục Lỗi Tải Video, Treo Render' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.1.0 — Khắc Phục Toàn Diện Lỗi Tải Video & Treo Render (Updated)
+            ## 🎉 Bản Phát Hành Vietsub AI v1.1.0 — Cố Định 1 Giọng Đọc & Khắc Phục Toàn Diện Lỗi Render
 
-            Phiên bản v1.1.1 giải quyết triệt để 2 lỗi nghiêm trọng khi chạy trên Windows:
+            Phiên bản v1.1.0 mang đến các cải tiến và sửa lỗi quan trọng:
 
+            - **🎙️ Khóa Cố Định 1 Giọng Đọc Duy Nhất & Tự Động Thử Lại Khi Ngắt Kết Nối:**
+              - Tuyệt đối giữ nguyên 100% đúng một giọng đọc đã chọn (loại bỏ việc tự động tráo đổi giọng nam/nữ hoặc chuyển sang giọng robot macOS Linh hay Gemini AI).
+              - Tự động kiên trì thử lại khi bị ngắt kết nối WebSocket/mạng cho đến khi thành công 100% câu từ.
             - **⚡ Khắc Phục Triệt Để Treo Đơ Khi Render Video (FFmpeg OS Pipe Deadlock):**
               - Giải quyết lỗi bộ đệm 64KB OS Pipe Buffer trên Windows: thêm luồng độc lập đọc và giải phóng stream `stderr` liên tục, ngăn chặn FFmpeg bị hệ điều hành đóng băng ở 77%.
               - Cập nhật % tiến trình render thực tế theo thời gian thực trực quan trên giao diện (`Đang render video: 45% (15s/33s)...`).

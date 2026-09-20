@@ -125,22 +125,15 @@ class TTSGenerator:
         return clean
 
     def generate_single_segment(self, text: str, out_path: str, is_mid_sentence: bool = False) -> bool:
-        """Tạo audio cho 1 phân đoạn đơn lẻ (hỗ trợ cả Edge-TTS và Gemini AI với tự động fallback)."""
+        """Tạo audio cho 1 phân đoạn đơn lẻ (giữ nguyên 100% một giọng đọc đã chọn, tự động thử lại khi ngắt kết nối)."""
         tts_text = self._smooth_segment_text(text, is_mid_sentence)
         if not tts_text:
             return False
 
         if self.tts_technology == "gemini":
-            try:
-                success = self._generate_single_gemini_tts(tts_text, out_path)
-                if success:
-                    return True
-            except Exception:
-                pass
-            # Fallback sang Edge-TTS
-            return self._run_asyncio_safe(self._generate_single_edge_tts(tts_text, out_path))
+            return self._generate_single_gemini_tts(tts_text, out_path)
         else:
-            return self._run_asyncio_safe(self._generate_single_edge_tts(tts_text, out_path))
+            return self._run_asyncio_safe(self._generate_single_edge_tts(tts_text, out_path, is_mid_sentence=is_mid_sentence))
 
     def _prepare_text_for_edge_tts(self, text: str, is_mid_sentence: bool = False) -> str:
         """
@@ -180,7 +173,7 @@ class TTSGenerator:
         return " ".join(t.split()).strip()
 
     def _generate_macos_say_tts(self, text: str, out_path: str, ffmpeg: str) -> bool:
-        """Dự phòng giọng đọc offline Linh của macOS khi máy chủ Edge-TTS bị ngắt kết nối."""
+        """Dự phòng giọng đọc offline Linh của macOS (chỉ dùng nội bộ khi có yêu cầu riêng)."""
         try:
             import tempfile
             with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as tf:
@@ -206,7 +199,11 @@ class TTSGenerator:
         voice_override: Optional[str] = None,
         is_mid_sentence: bool = False,
     ) -> bool:
-        """Tạo audio cho một câu dùng Microsoft Edge-TTS với cơ chế thử lại thông minh & bảo toàn 100% câu từ."""
+        """
+        Tạo audio cho một câu dùng Microsoft Edge-TTS:
+        - Giữ nguyên 100% duy nhất 1 giọng đọc đã chọn (tuyệt đối không tự ý đổi sang giọng khác).
+        - Tự động thử lại khi bị ngắt kết nối cho đến khi thành công.
+        """
         # Chuẩn hóa rate và pitch
         rate_val = self.speed
         if not rate_val.startswith(("+", "-")):
@@ -220,7 +217,7 @@ class TTSGenerator:
         if not pitch_val.endswith("Hz"):
             pitch_val = f"{pitch_val}Hz"
 
-        # Nếu có voice_override thì ưu tiên dùng; nếu không thì dùng self.voice
+        # Khóa cứng duy nhất 1 giọng đọc đã chọn
         voice_name = voice_override or self.voice
         if not voice_name.startswith("vi-VN-"):
             voice_name = "vi-VN-HoaiMyNeural"
@@ -233,8 +230,7 @@ class TTSGenerator:
             return False
 
         attempt = 0
-        max_attempts = 6
-        while attempt < max_attempts:
+        while True:
             if self.is_cancelled and self.is_cancelled():
                 raise InterruptedError("Đã hủy bởi người dùng.")
 
@@ -259,7 +255,7 @@ class TTSGenerator:
             if attempt == 2:
                 current_text = clean_edge_text.rstrip(".?!,;:- ").strip()
 
-            # Lần thử 3: Làm sạch sâu hơn, chỉ giữ chữ, số và dấu phẩy, dùng tham số chuẩn
+            # Lần thử 3+: Làm sạch sâu hơn, chỉ giữ chữ, số và dấu phẩy, dùng tham số chuẩn
             if attempt >= 3:
                 import re
                 current_text = re.sub(r'[^\w\s,]', ' ', clean_edge_text).strip()
@@ -267,13 +263,8 @@ class TTSGenerator:
                 current_rate = "+0%"
                 current_pitch = "+0Hz"
 
-            # Lần thử 4+: Thử đảo giọng đọc bản xứ khác để tránh server chặn cụm từ
+            # TUYỆT ĐỐI KHÔNG ĐỔI GIỌNG: Luôn dùng đúng giọng đọc đã chọn ban đầu
             current_voice = voice_name
-            if attempt >= 4:
-                if "HoaiMy" in voice_name:
-                    current_voice = "vi-VN-NamMinhNeural"
-                elif "NamMinh" in voice_name:
-                    current_voice = "vi-VN-HoaiMyNeural"
 
             try:
                 communicate = edge_tts.Communicate(
@@ -287,7 +278,7 @@ class TTSGenerator:
                 await communicate.save(out_path)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
                     if attempt > 1:
-                        self._log(f"   ✅ Đã tạo thành công giọng {current_voice} ở lần thử thứ {attempt}!")
+                        self._log(f"   ✅ Đã kết nối lại và tạo thành công giọng {current_voice} ở lần thử thứ {attempt}!")
                     return True
             except (InterruptedError, KeyboardInterrupt):
                 raise
@@ -299,45 +290,26 @@ class TTSGenerator:
                     except Exception:
                         pass
 
-                # Nếu là lần thử thứ 5 và có Gemini Client, thử fallback sang Gemini TTS ngay
-                if attempt == 5 and self._gemini_client:
-                    try:
-                        gem_ok = self._generate_single_gemini_tts(current_text, out_path)
-                        if gem_ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                            self._log(f"   ✅ Đã fallback sang Google Gemini TTS thành công cho câu này!")
-                            return True
-                    except Exception:
-                        pass
-
-                if attempt >= max_attempts:
-                    # Nếu trên macOS, thử fallback sang giọng nói Linh của hệ thống trước khi từ bỏ
-                    if sys.platform == "darwin":
-                        ffmpeg = get_ffmpeg_path() or "ffmpeg"
-                        if self._generate_macos_say_tts(current_text, out_path, ffmpeg):
-                            self._log("   ✅ Đã sử dụng giọng đọc ngoại tuyến hệ thống để không bỏ sót câu!")
-                            return True
-
-                    self._log(f"   ❌ Giọng {voice_name} không phản hồi sau {max_attempts} lần thử.")
-                    return False
-
-                # Tăng dần thời gian chờ: 0.8s -> 1.2s -> 1.6s -> ... tối đa 3.0s để WebSocket hồi phục
-                wait_sec = min(0.8 + 0.4 * min(attempt, 5), 3.0)
+                # Tăng dần thời gian chờ: 1.0s -> 1.5s -> 2.0s -> ... tối đa 5.0s để kết nối hồi phục
+                wait_sec = min(1.0 + 0.5 * min(attempt, 8), 5.0)
                 err_str = str(e)
                 if "No audio was received" in err_str:
                     err_hint = "Máy chủ Microsoft ngắt kết nối tạm thời"
+                elif "WSServerHandshakeError" in err_str or "ClientResponseError" in err_str:
+                    err_hint = "Lỗi bắt tay WebSocket với máy chủ Microsoft"
+                elif "ConnectionResetError" in err_str or "BrokenPipeError" in err_str:
+                    err_hint = "Kết nối mạng bị gián đoạn"
                 else:
                     err_hint = err_str
 
                 self._log(
                     f"   🔄 Giọng {voice_name} gặp gián đoạn ({err_hint}). "
-                    f"Đang tự động thử lại lần {attempt + 1}/{max_attempts} (chờ {wait_sec:.1f}s)..."
+                    f"Đang tự động thử lại lần {attempt + 1} (chờ {wait_sec:.1f}s cho đến khi thành công)..."
                 )
                 await asyncio.sleep(wait_sec)
 
-        return False
-
     def _generate_single_gemini_tts(self, text: str, out_path: str) -> bool:
-        """Tạo audio cho một câu dùng Google Gemini TTS."""
+        """Tạo audio cho một câu dùng Google Gemini TTS: Cố định giọng đọc và tự động thử lại khi gián đoạn."""
         if not self._gemini_client:
             return False
 
@@ -349,9 +321,12 @@ class TTSGenerator:
         if gemini_voice not in valid_voices:
             gemini_voice = "Aoede"
 
-        for attempt in range(3):
+        attempt = 0
+        while True:
             if self.is_cancelled and self.is_cancelled():
                 raise InterruptedError("Đã hủy bởi người dùng.")
+
+            attempt += 1
             try:
                 prompt = (
                     f"Bạn là phát thanh viên lồng tiếng chuyên nghiệp. "
@@ -395,21 +370,23 @@ class TTSGenerator:
                                 pass
 
                             if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                                if attempt > 1:
+                                    self._log(f"   ✅ Đã kết nối lại và tạo thành công giọng Gemini ({gemini_voice}) ở lần thử thứ {attempt}!")
                                 return True
             except (InterruptedError, KeyboardInterrupt):
                 raise
             except Exception as e:
                 err_str = str(e)
-                print(f"Gemini TTS retry {attempt + 1}: {err_str}")
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                    # Gặp hạn ngạch giới hạn Free Tier (3 req/phút của Google)
-                    # Lập tức fallback về Edge-TTS để không làm gián đoạn hay bắt người dùng chờ lâu
-                    return False
-                time.sleep(1.0 * (attempt + 1))
-        return False
+                    wait_sec = min(5.0 * attempt, 20.0)
+                    self._log(f"   ⏳ Gemini TTS chạm hạn ngạch (429). Đang chờ {wait_sec:.0f}s để thử lại lần {attempt + 1} với giọng {gemini_voice}...")
+                else:
+                    wait_sec = min(1.5 + 0.5 * min(attempt, 6), 5.0)
+                    self._log(f"   🔄 Gemini TTS gặp gián đoạn ({err_str}). Đang thử lại lần {attempt + 1} (chờ {wait_sec:.1f}s)...")
+                time.sleep(wait_sec)
 
     def _create_silence_audio(self, ffmpeg: str, duration_sec: float, out_path: str) -> bool:
-        """Tạo file audio im lặng (silence) đúng thời lượng phân đoạn để giữ timeline chuẩn xác (Phương án A)."""
+        """Tạo file audio im lặng (silence) đúng thời lượng phân đoạn để giữ timeline chuẩn xác."""
         dur = max(duration_sec, 0.2)
         try:
             cmd = [
@@ -443,8 +420,8 @@ class TTSGenerator:
             tts_skip_count = 0
 
             if use_gemini:
-                gemini_consecutive_failures = 0
-                gemini_aborted = False
+                chosen_gemini_voice = self.voice if self.voice in {"Aoede", "Charon", "Fenrir", "Kore", "Puck"} else "Aoede"
+                self._log(f"🎙️ Giọng đọc được chọn cố định: Google Gemini AI ({chosen_gemini_voice}) (đồng nhất 100% xuyên suốt video)")
                 temp_gemini_paths = []
                 for i, seg in enumerate(segments):
                     if self.is_cancelled and self.is_cancelled():
@@ -452,7 +429,7 @@ class TTSGenerator:
 
                     self._report(
                         i / len(segments),
-                        f"Lồng tiếng (Google Gemini AI) câu {i + 1}/{len(segments)}...",
+                        f"Lồng tiếng (Google Gemini AI - {chosen_gemini_voice}) câu {i + 1}/{len(segments)}...",
                     )
 
                     is_mid = False
@@ -466,61 +443,21 @@ class TTSGenerator:
                         continue
 
                     seg_path = os.path.join(tmp_dir, f"seg_gemini_{i:04d}.mp3")
-                    try:
-                        success = self._generate_single_gemini_tts(tts_text, seg_path)
-                    except Exception as ge:
-                        self._log(f"   ⚠️ Gemini TTS lỗi câu {i + 1}: {ge}")
-                        success = False
-
-                    if not success:
-                        # Fallback sang Edge-TTS ngay cho câu này để KHÔNG BAO GIỜ bị mất câu
-                        fallback_voice = self.voice if self.voice.startswith("vi-VN-") else "vi-VN-HoaiMyNeural"
-                        try:
-                            success = await self._generate_single_edge_tts(
-                                tts_text, seg_path, voice_override=fallback_voice, is_mid_sentence=is_mid
-                            )
-                        except Exception:
-                            success = False
-
-                        if success:
-                            temp_gemini_paths.append((seg, seg_path))
-                            self._log(f"   ℹ️ Câu {i + 1}/{len(segments)}: Gemini bận → đã lồng tiếng tự động bằng Microsoft AI ({fallback_voice})")
-                        else:
-                            gemini_consecutive_failures += 1
-                            if gemini_consecutive_failures >= 3:
-                                self._log(f"   ⚠️ Gemini TTS lỗi {gemini_consecutive_failures} lần liên tiếp → chuyển sang Microsoft AI")
-                                gemini_aborted = True
-                                break
-                            else:
-                                seg_dur_sec = max((seg.end_ms - seg.start_ms) / 1000.0, 0.4)
-                                silence_path = os.path.join(tmp_dir, f"silence_gemini_{i:04d}.mp3")
-                                if self._create_silence_audio(ffmpeg, seg_dur_sec, silence_path):
-                                    temp_gemini_paths.append((seg, silence_path))
-                                    tts_skip_count += 1
-                                    self._log(f"   ⚠️ Câu {i + 1}/{len(segments)}: Đã chèn khoảng lặng {seg_dur_sec:.1f}s giữ timeline.")
-                    else:
-                        gemini_consecutive_failures = 0  # Reset khi thành công
+                    success = self._generate_single_gemini_tts(tts_text, seg_path)
+                    if success:
                         temp_gemini_paths.append((seg, seg_path))
+                        tts_success_count += 1
 
                     await asyncio.sleep(0.3)
 
-                if gemini_aborted:
-                    self._report(
-                        0.0,
-                        "⚠️ Gemini AI hết hạn mức Google. Đang chuyển toàn bộ sang Microsoft AI để đồng nhất 1 giọng...",
-                    )
-                    self._log("🔄 Chuyển toàn bộ lồng tiếng sang Microsoft Edge-TTS để đảm bảo đồng nhất 1 giọng nói.")
-                    use_gemini = False
-                else:
-                    seg_paths = temp_gemini_paths
-                    tts_success_count = len(temp_gemini_paths) - tts_skip_count
+                seg_paths = temp_gemini_paths
 
             if not use_gemini:
                 seg_paths = []
                 tts_success_count = 0
                 tts_skip_count = 0
 
-                # Giữ nguyên 100% giọng đọc được người dùng lựa chọn trong suốt toàn bộ video
+                # Giữ nguyên 100% giọng đọc được người dùng lựa chọn trong suốt toàn bộ video (tuyệt đối không đổi giọng)
                 chosen_voice = self.voice if self.voice.startswith("vi-VN-") else "vi-VN-NamMinhNeural"
                 self._log(f"🎙️ Giọng đọc được chọn cố định: {chosen_voice} (đồng nhất 100% xuyên suốt video)")
 
@@ -546,47 +483,16 @@ class TTSGenerator:
                     seg_path = os.path.join(tmp_dir, f"seg_edge_{i:04d}.mp3")
 
                     # Luôn dùng đúng giọng đọc đã chọn (tuyệt đối không tự ý đổi sang giọng khác)
+                    # Tự động thử lại khi bị ngắt kết nối cho đến khi thành công
                     success = await self._generate_single_edge_tts(
                         tts_text, seg_path, voice_override=chosen_voice, is_mid_sentence=is_mid
                     )
 
-                    # Nếu không thành công sau nhiều lần thử, dùng các tầng dự phòng trước khi bỏ qua
-                    if not success:
-                        # Fallback cấp 2: Thử Gemini TTS nếu có API key
-                        if self._gemini_client:
-                            try:
-                                success = self._generate_single_gemini_tts(tts_text, seg_path)
-                            except Exception:
-                                success = False
-
-                        # Fallback cấp 3: Thử giọng đọc offline Linh của macOS
-                        if not success and sys.platform == "darwin":
-                            try:
-                                success = self._generate_macos_say_tts(tts_text, seg_path, ffmpeg)
-                            except Exception:
-                                success = False
-
-                        if not success:
-                            tts_skip_count += 1
-                            seg_dur_sec = max((seg.end_ms - seg.start_ms) / 1000.0, 0.4)
-                            silence_path = os.path.join(tmp_dir, f"silence_edge_{i:04d}.mp3")
-                            if self._create_silence_audio(ffmpeg, seg_dur_sec, silence_path):
-                                self._log(
-                                    f"   ⚠️ Câu {i + 1}/{len(segments)}: Không thể kết nối TTS "
-                                    f"→ đã chèn khoảng lặng {seg_dur_sec:.1f}s giữ timeline: \"{tts_text[:40]}...\""
-                                )
-                                seg_paths.append((seg, silence_path))
-                            else:
-                                self._log(f"   ⚠️ Bỏ qua câu {i + 1}/{len(segments)}: \"{tts_text[:40]}...\"")
-                        else:
-                            tts_success_count += 1
-                            seg_paths.append((seg, seg_path))
-                    else:
+                    if success:
                         tts_success_count += 1
                         seg_paths.append((seg, seg_path))
 
-                    # Nghỉ giữa các câu: giảm xuống 0.35s (vẫn đủ tránh Microsoft rate-limit)
-                    # Giảm từ 0.65s trước đây → tiết kiệm ~60s cho video 200 câu
+                    # Nghỉ giữa các câu: 0.35s (vẫn đủ tránh Microsoft rate-limit)
                     await asyncio.sleep(0.35)
 
             # Điều chỉnh tốc độ thông minh & Bảo toàn tone giọng phát thanh viên (Tempo Smoothing & Ripple Scheduling)
