@@ -160,8 +160,11 @@ jobs:
               - Bố trí thanh chuyển tab 2 tầng chuyên nghiệp trên Header Card, không bị che khuất ở bất kỳ kích thước màn hình nào.
               - Giữ nguyên vẹn 100% tiến trình, log và trạng thái công việc khi chuyển qua lại giữa các tab.
               - Hỗ trợ kéo thả video tự động chuyển về Tab Studio để làm việc ngay lập tức.
-            - **🎙️ Khóa Cố Định 1 Giọng Đọc & Ổn Định Tuyệt Đối:**
-              - Duy trì ổn định giọng đọc Microsoft Edge Neural (Hoài My truyền cảm, Nam Minh trầm ấm) với cơ chế tự động thử lại khi gián đoạn mạng.
+            - **🛡️ Khắc Phục Triệt Để Hiện Tượng Cửa Sổ Console Giật/Nháy Liên Tục Trên Windows:**
+              - Tích hợp 2 tầng bảo vệ tiến trình ngầm (`CREATE_NO_WINDOW` & `STARTUPINFO(SW_HIDE)`), triệt tiêu hoàn toàn việc bật/nháy cửa sổ đen Command Prompt khi FFmpeg/FFprobe chạy trong suốt quá trình lồng tiếng (TTS), đo thời lượng, co giãn tốc độ (atempo), ghép nối (amix) và chuẩn hóa âm học (loudnorm).
+            - **🎙️ Khóa Cố Định 1 Giọng Đọc & Tự Động Đồng Bộ Phụ Đề Chuẩn Khớp 1:1:**
+              - Duy trì ổn định 100% giọng đọc Microsoft Edge Neural đã chọn với cơ chế tự động thử lại khi gián đoạn mạng.
+              - Thuật toán Ripple Scheduling & Non-Colliding Scheduler tự động đồng bộ phụ đề chữ khớp chính xác 100% theo nhịp giọng đọc AI thực tế, bảo vệ câu cuối không bao giờ bị cắt cụt.
             - **⚡ Hiệu Năng & Ổn Định:**
               - Tích hợp FFmpeg 7.1, Demucs AI và pipeline render video mượt mà, không gián đoạn.
 

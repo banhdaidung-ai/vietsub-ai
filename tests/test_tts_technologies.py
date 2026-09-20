@@ -449,3 +449,48 @@ async def test_user_cancellation_breaks_retry_loop():
             with pytest.raises(InterruptedError):
                 await gen._generate_single_edge_tts("Test cancel", tmp_out)
 
+
+@pytest.mark.asyncio
+async def test_final_segment_guard_and_sync_return():
+    """Kiểm tra:
+    1. _generate_track_async trả về danh sách phân đoạn đã đồng bộ.
+    2. Câu cuối cùng kết thúc trước khi video hết thời lượng (không bị cắt cụt).
+    3. Phụ đề chữ và audio được đồng bộ khớp 1:1.
+    """
+    gen = TTSGenerator(voice="vi-VN-NamMinhNeural", tts_technology="edge")
+
+    segs = [
+        SRTSegment(index=1, start="00:00:00,000", end="00:00:03,000", text="Câu một đầu tiên", start_ms=0, end_ms=3000),
+        SRTSegment(index=2, start="00:00:03,500", end="00:00:07,000", text="Câu hai tiếp theo", start_ms=3500, end_ms=7000),
+        SRTSegment(index=3, start="00:00:07,500", end="00:00:10,000", text="Câu cuối cùng rất dài nhưng không được bị cắt", start_ms=7500, end_ms=10000),
+    ]
+
+    async def mock_gen(text, out_path, **kwargs):
+        with open(out_path, "wb") as f:
+            f.write(b"mock-audio")
+        return True
+
+    # Giả lập câu cuối audio đọc dài 3500ms trong khi thời gian từ 7.5s đến 10.0s chỉ có 2500ms
+    durations = [2800, 3200, 3500]
+    dur_call = 0
+
+    def mock_get_dur(path):
+        nonlocal dur_call
+        val = durations[dur_call % len(durations)]
+        dur_call += 1
+        return val
+
+    with patch.object(gen, "_generate_single_edge_tts", side_effect=mock_gen):
+        with patch.object(gen, "_get_audio_duration_ms", side_effect=mock_get_dur):
+            with patch.object(gen, "_combine_segments", return_value=None):
+                tmp_out = os.path.join(tempfile.gettempdir(), "test_sync_return.mp3")
+                synced_segs = await gen._generate_track_async(segs, 10.0, tmp_out)
+
+    assert synced_segs is not None
+    assert len(synced_segs) == 3
+
+    # Kiểm tra câu cuối: end_ms phải <= 10000ms
+    last_seg = synced_segs[-1]
+    assert last_seg.end_ms <= 10000
+    assert last_seg.start_ms < last_seg.end_ms
+

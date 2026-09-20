@@ -13,6 +13,7 @@ from typing import Callable, Optional
 import re
 import threading
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path, get_video_duration
+from utils.platform_helper import get_subprocess_no_window_kwargs, run_hidden_subprocess
 from utils.subtitle_styles import build_ffmpeg_subtitle_style
 
 
@@ -31,9 +32,7 @@ def _run_ffmpeg_cancellable(
     if is_cancelled and is_cancelled():
         raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
 
-    creationflags = 0
-    if sys.platform == "win32":
-        creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0x08000000
+    popen_kwargs = get_subprocess_no_window_kwargs()
 
     p = subprocess.Popen(
         cmd,
@@ -44,7 +43,7 @@ def _run_ffmpeg_cancellable(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
-        creationflags=creationflags,
+        **popen_kwargs,
     )
 
     stderr_lines = []
@@ -95,7 +94,7 @@ def check_has_audio(video_path: str) -> bool:
         # 1. Thử qua ffprobe nếu có sẵn
         ffprobe = get_ffprobe_path()
         if ffprobe:
-            res = subprocess.run(
+            res = run_hidden_subprocess(
                 [
                     ffprobe, "-v", "error",
                     "-select_streams", "a",
@@ -112,7 +111,7 @@ def check_has_audio(video_path: str) -> bool:
 
         # 2. Hoặc kiểm tra trực tiếp qua ffmpeg -i
         ffmpeg = get_ffmpeg_path() or "ffmpeg"
-        res = subprocess.run(
+        res = run_hidden_subprocess(
             [ffmpeg, "-i", video_path],
             capture_output=True,
             text=True,

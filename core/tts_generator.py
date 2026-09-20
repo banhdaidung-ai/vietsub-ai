@@ -19,6 +19,7 @@ from typing import Callable, List, Optional
 import edge_tts
 
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
+from utils.platform_helper import run_hidden_subprocess
 from utils.srt_parser import SRTSegment, is_clause_continuation, ms_to_time
 
 
@@ -67,14 +68,16 @@ class TTSGenerator:
         segments: List[SRTSegment],
         total_duration_sec: float,
         output_path: str,
-    ):
+    ) -> List[SRTSegment]:
         """
         Tạo một audio track hoàn chỉnh, ghép từ các đoạn TTS
         với timing khớp chính xác theo timestamp SRT.
+        Trả về danh sách phân đoạn đã đồng bộ hóa 100% với giọng đọc.
         """
-        self._run_asyncio_safe(
+        res = self._run_asyncio_safe(
             self._generate_track_async(segments, total_duration_sec, output_path)
         )
+        return res if res else segments
 
     @staticmethod
     def _run_asyncio_safe(coro):
@@ -179,10 +182,10 @@ class TTSGenerator:
             with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as tf:
                 aiff_path = tf.name
 
-            res = subprocess.run(["say", "-v", "Linh", text, "-o", aiff_path], capture_output=True, check=False)
+            res = run_hidden_subprocess(["say", "-v", "Linh", text, "-o", aiff_path], capture_output=True, check=False)
             if res.returncode == 0 and os.path.exists(aiff_path) and os.path.getsize(aiff_path) > 0:
                 cmd = [ffmpeg, "-y", "-i", aiff_path, "-c:a", "libmp3lame", "-q:a", "2", out_path]
-                subprocess.run(cmd, capture_output=True, check=False)
+                run_hidden_subprocess(cmd, capture_output=True, check=False)
                 try:
                     os.remove(aiff_path)
                 except Exception:
@@ -359,7 +362,7 @@ class TTSGenerator:
 
                             # Chuyển WAV sang MP3 chất lượng cao
                             ffmpeg = get_ffmpeg_path() or "ffmpeg"
-                            subprocess.run(
+                            run_hidden_subprocess(
                                 [ffmpeg, "-y", "-i", temp_wav, "-c:a", "libmp3lame", "-q:a", "2", out_path],
                                 capture_output=True,
                                 check=False,
@@ -398,7 +401,7 @@ class TTSGenerator:
                 "-q:a", "4",
                 out_path,
             ]
-            res = subprocess.run(cmd, capture_output=True, check=False)
+            res = run_hidden_subprocess(cmd, capture_output=True, check=False)
             return res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
         except Exception:
             return False
@@ -505,19 +508,33 @@ class TTSGenerator:
                     adjusted_seg_paths.append((seg, seg_path))
                     continue
 
-                # Xác định khoảng thời gian lý tưởng khả dụng cho câu này
-                if i + 1 < len(seg_paths):
-                    gap_to_next = seg_paths[i + 1][0].start_ms - seg.start_ms
-                    target_max_ms = max(gap_to_next - 60, 500)
-                else:
-                    seg_dur_ms = max(seg.end_ms - seg.start_ms, 800)
-                    target_max_ms = max(seg_dur_ms + 200, int(total_duration_sec * 1000) - seg.start_ms)
+                # 1. Xác định thời điểm bắt đầu thực tế (actual_start_ms) theo thuật toán Non-Colliding Ripple Scheduler:
+                # Nếu câu trước đã đọc, câu sau bắt đầu sau khi câu trước dứt lời + 80ms thở tự nhiên.
+                # Nếu là câu đầu tiên (hoặc mốc gốc seg.start_ms xa hơn), bắt đầu chính xác tại mốc seg.start_ms.
+                actual_start_ms = max(seg.start_ms, current_end_ms + 80) if current_end_ms > 0 else seg.start_ms
 
-                # Nếu câu đọc dài hơn khung thời gian, tăng tốc nhẹ nhàng (tối đa 1.25x) bằng FFmpeg atempo
+                # 2. Xác định khung thời gian tối đa khả dụng (target_max_ms) dựa trên actual_start_ms thực tế:
+                if i + 1 < len(seg_paths):
+                    next_orig_start = seg_paths[i + 1][0].start_ms
+                    if next_orig_start > actual_start_ms:
+                        gap_to_next = next_orig_start - actual_start_ms
+                        target_max_ms = max(gap_to_next - 60, 500)
+                    else:
+                        target_max_ms = max(seg.end_ms - seg.start_ms, 800)
+                    max_allowed_speed = 1.50
+                else:
+                    # CÂU CUỐI CÙNG: Bắt buộc kết thúc trước khi video hết thời lượng!
+                    # Chừa 150ms buffer an toàn tuyệt đối trước khi video kết thúc để không bao giờ bị cắt cụt chữ
+                    total_ms = int(total_duration_sec * 1000)
+                    remaining_ms = total_ms - actual_start_ms
+                    target_max_ms = max(remaining_ms - 150, 400)
+                    max_allowed_speed = 1.65
+
+                # 3. Nếu câu đọc dài hơn khung thời gian, tăng tốc nhẹ nhàng và tự nhiên bằng FFmpeg atempo
                 # FFmpeg atempo bảo toàn formant và pitch 100%, không làm méo tiếng hay the thé
                 if tts_dur_ms > target_max_ms:
                     raw_speed = tts_dur_ms / target_max_ms
-                    speed = min(max(raw_speed, 1.02), 1.25)
+                    speed = min(max(raw_speed, 1.02), max_allowed_speed)
                     adjusted_path = seg_path.replace(".mp3", "_adj.mp3")
                     filter_str = f"atempo={speed:.3f}"
                     cmd = [
@@ -526,16 +543,18 @@ class TTSGenerator:
                         "-c:a", "libmp3lame", "-q:a", "2",
                         adjusted_path,
                     ]
-                    subprocess.run(cmd, capture_output=True, check=False)
+                    run_hidden_subprocess(cmd, capture_output=True, check=False)
                     if os.path.exists(adjusted_path) and os.path.getsize(adjusted_path) > 0:
                         seg_path = adjusted_path
                         tts_dur_ms = self._get_audio_duration_ms(seg_path) or int(tts_dur_ms / speed)
+                    else:
+                        tts_dur_ms = int(tts_dur_ms / speed)
 
-                # TUYỆT ĐỐI KHÔNG CẮT ÂM THANH (-t / afade) ĐỂ ĐẢM BẢO 100% CÂU TỪ ĐƯỢC ĐỌC TRỌN VẸN!
-                # Áp dụng thuật toán Non-Colliding Ripple Scheduler:
-                # Nếu câu trước đã có âm thanh, câu sau bắt đầu sau khi câu trước dứt lời + 80ms thở tự nhiên.
-                # Nếu là câu đầu tiên (chưa có âm thanh), bắt đầu chính xác tại mốc seg.start_ms
-                actual_start_ms = max(seg.start_ms, current_end_ms + 80) if current_end_ms > 0 else seg.start_ms
+                # Đảm bảo câu cuối không bao giờ vượt quá thời lượng video
+                if i + 1 == len(seg_paths) and total_duration_sec > 0:
+                    max_dur = max(int(total_duration_sec * 1000) - actual_start_ms - 50, 200)
+                    tts_dur_ms = min(tts_dur_ms, max_dur)
+
                 actual_end_ms = actual_start_ms + tts_dur_ms
                 current_end_ms = actual_end_ms
 
@@ -568,6 +587,7 @@ class TTSGenerator:
 
             self._report(0.9, "Đang hòa trộn các đoạn giọng nói theo mốc thời gian...")
             await self._combine_segments(seg_paths, total_duration_sec, output_path, tmp_dir)
+            return [seg for seg, _ in seg_paths]
 
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -628,7 +648,7 @@ class TTSGenerator:
                 output_path,
             ]
         )
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = run_hidden_subprocess(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg lỗi khi merge audio batches:\n{result.stderr[-800:]}")
 
@@ -668,7 +688,7 @@ class TTSGenerator:
             ]
         )
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = run_hidden_subprocess(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(
                 f"FFmpeg lỗi khi ghép audio:\n{result.stderr[-800:]}"
@@ -693,7 +713,7 @@ class TTSGenerator:
             "-q:a", "2",
             mastered_tmp,
         ]
-        res = subprocess.run(cmd, capture_output=True, check=False)
+        res = run_hidden_subprocess(cmd, capture_output=True, check=False)
         if res.returncode == 0 and os.path.exists(mastered_tmp) and os.path.getsize(mastered_tmp) > 0:
             try:
                 shutil.move(mastered_tmp, audio_path)

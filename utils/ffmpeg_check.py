@@ -15,6 +15,8 @@ import zipfile
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
+from utils.platform_helper import run_hidden_subprocess
+
 FFMPEG_DOWNLOAD_URLS = {
     "win32": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/win32.zip",
     "darwin_arm64": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/darwin_arm64.zip",
@@ -342,7 +344,7 @@ def check_ffmpeg(force: bool = False) -> Tuple[bool, str]:
         return res
 
     try:
-        result = subprocess.run(
+        result = run_hidden_subprocess(
             [ffmpeg, "-version"],
             capture_output=True,
             text=True,
@@ -371,7 +373,7 @@ def get_video_duration(video_path: str) -> float:
     # 1. Đọc thời lượng trực tiếp qua FFmpeg -i (nhanh, chuẩn và không cần thêm file ffprobe)
     ffmpeg = get_ffmpeg_path() or "ffmpeg"
     try:
-        res = subprocess.run(
+        res = run_hidden_subprocess(
             [ffmpeg, "-i", video_path],
             capture_output=True,
             text=True,
@@ -390,7 +392,7 @@ def get_video_duration(video_path: str) -> float:
     ffprobe = get_ffprobe_path()
     if ffprobe:
         try:
-            result = subprocess.run(
+            result = run_hidden_subprocess(
                 [
                     ffprobe, "-v", "error",
                     "-show_entries", "format=duration:stream=duration",
@@ -412,7 +414,7 @@ def get_video_duration(video_path: str) -> float:
             pass
 
         try:
-            result_simple = subprocess.run(
+            result_simple = run_hidden_subprocess(
                 [
                     ffprobe, "-v", "error",
                     "-show_entries", "format=duration",

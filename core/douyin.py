@@ -8,6 +8,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+from utils.platform_helper import run_hidden_subprocess
+
 def _get_requests():
     try:
         from curl_cffi import requests as cffi_requests
@@ -555,7 +557,7 @@ class DouyinDownloader:
             cmd += ["-c:a", "libmp3lame", "-b:a", "320k"]
         cmd.append(str(out_path))
 
-        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        res = run_hidden_subprocess(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
         if remove_input and os.path.exists(input_media):
             try:

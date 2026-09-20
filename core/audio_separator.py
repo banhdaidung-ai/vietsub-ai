@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
+from utils.platform_helper import run_hidden_subprocess
 
 
 def _ensure_ffmpeg_ffprobe_in_path():
@@ -146,7 +147,7 @@ def separate_audio_stems(
                 "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2",
                 temp_wav
             ]
-            res = subprocess.run(cmd_extract, capture_output=True, text=True, errors="replace")
+            res = run_hidden_subprocess(cmd_extract, capture_output=True, text=True, errors="replace")
             if res.returncode == 0 and os.path.exists(temp_wav):
                 audio_input_path = temp_wav
 

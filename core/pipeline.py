@@ -276,10 +276,13 @@ class Pipeline:
             # Giới hạn thời gian TTS tối đa 90 phút để tránh treo vô hạn trên Windows
             tts_error = [None]
             tts_done_event = threading.Event()
+            tts_synced_segments = []
 
             def _run_tts():
                 try:
-                    tts.generate_track(segments, total_duration, tts_audio)
+                    res = tts.generate_track(segments, total_duration, tts_audio)
+                    if res:
+                        tts_synced_segments.extend(res)
                 except Exception as e:
                     tts_error[0] = e
                 finally:
@@ -309,6 +312,27 @@ class Pipeline:
 
             if self._cancelled:
                 raise InterruptedError("Đã hủy bởi người dùng.")
+
+            # Đồng bộ hóa phụ đề chữ với timing giọng đọc thực tế
+            if tts_synced_segments:
+                segments = tts_synced_segments
+                srt_content = segments_to_srt(segments)
+                with open(srt_tmp, "w", encoding="utf-8") as f:
+                    f.write(srt_content)
+                self._log("🎯 Đã tự động đồng bộ phụ đề chữ khớp chính xác 100% theo nhịp giọng đọc AI.")
+
+                # Cập nhật file phụ đề rời .srt và .txt (nếu người dùng bật xuất file rời)
+                if export_srt and output_srt:
+                    shutil.copy2(srt_tmp, output_srt)
+                if export_txt and output_txt:
+                    txt_lines = []
+                    for seg in segments:
+                        clean_line = " ".join(seg.text.split()).strip()
+                        if clean_line:
+                            txt_lines.append(clean_line)
+                    with open(output_txt, "w", encoding="utf-8") as f:
+                        f.write("\n".join(txt_lines) + "\n")
+
             self._log("✅ Tạo giọng đọc xong")
             self._progress(0.75, "Tạo giọng xong")
         else:

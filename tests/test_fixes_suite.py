@@ -124,6 +124,16 @@ class TestFixesSuite(unittest.TestCase):
             if os.path.exists(tmp_mp3):
                 os.remove(tmp_mp3)
 
+    def test_hidden_subprocess_integration(self):
+        from core.tts_generator import run_hidden_subprocess as tts_run_hidden
+        from utils.ffmpeg_check import run_hidden_subprocess as check_run_hidden
+        from core.ffmpeg_processor import run_hidden_subprocess as proc_run_hidden
+        from utils.platform_helper import run_hidden_subprocess
+
+        self.assertIs(tts_run_hidden, run_hidden_subprocess)
+        self.assertIs(check_run_hidden, run_hidden_subprocess)
+        self.assertIs(proc_run_hidden, run_hidden_subprocess)
+
 
 if __name__ == "__main__":
     unittest.main()

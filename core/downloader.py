@@ -8,6 +8,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable, Optional
 
+from utils.platform_helper import run_hidden_subprocess
+
 # Vá lỗi PackageNotFoundError cho curl_cffi khi chạy trong môi trường PyInstaller trên Windows
 try:
     import importlib.metadata as _meta
@@ -371,7 +373,7 @@ class VideoDownloader:
             cmd += ["-c:a", "libmp3lame", "-b:a", "320k"]
         cmd.append(str(out_path))
 
-        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        res = run_hidden_subprocess(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         try:
             if tmp_file.exists():
                 tmp_file.unlink()
