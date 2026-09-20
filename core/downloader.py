@@ -8,6 +8,33 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable, Optional
 
+# Vá lỗi PackageNotFoundError cho curl_cffi khi chạy trong môi trường PyInstaller trên Windows
+try:
+    import importlib.metadata as _meta
+    _orig_meta = _meta.metadata
+    _orig_ver = _meta.version
+
+    def _safe_metadata(name: str):
+        try:
+            return _orig_meta(name)
+        except _meta.PackageNotFoundError:
+            if name and name.lower().replace("-", "_") == "curl_cffi":
+                return {"Summary": "curl_cffi", "Version": "0.16.3", "Name": "curl_cffi"}
+            raise
+
+    def _safe_version(name: str):
+        try:
+            return _orig_ver(name)
+        except _meta.PackageNotFoundError:
+            if name and name.lower().replace("-", "_") == "curl_cffi":
+                return "0.16.3"
+            raise
+
+    _meta.metadata = _safe_metadata
+    _meta.version = _safe_version
+except Exception:
+    pass
+
 import yt_dlp
 
 from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
@@ -71,17 +98,23 @@ class VideoDownloader:
             url_clean = clean_extracted
 
         # ── HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) không watermark ──
-        from core.douyin import DouyinDownloader
-        if DouyinDownloader.is_douyin_url(url_clean):
-            douyin_dl = DouyinDownloader()
-            self._downloaded_path = douyin_dl.download_video(
-                raw_url=url_clean,
-                output_dir=output_dir,
-                quality=quality,
-                progress_callback=self.progress_callback,
-                is_cancelled=self.is_cancelled,
-            )
-            return self._downloaded_path
+        if "douyin.com" in url_clean.lower():
+            try:
+                from core.douyin import DouyinDownloader
+                if DouyinDownloader.is_douyin_url(url_clean):
+                    douyin_dl = DouyinDownloader()
+                    self._downloaded_path = douyin_dl.download_video(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        quality=quality,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+            except Exception as dy_err:
+                if isinstance(dy_err, InterruptedError):
+                    raise
+                pass
 
         # ── HỖ TRỢ CHUYÊN BIỆT: Xiaohongshu (小红书 / XHS) ──
         from core.xhs_downloader import XHSDownloader
@@ -374,18 +407,24 @@ class VideoDownloader:
         url_clean = url.strip()
 
         # ── 0. HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) ──
-        from core.douyin import DouyinDownloader
-        if DouyinDownloader.is_douyin_url(url_clean):
-            douyin_dl = DouyinDownloader()
-            self._downloaded_path = douyin_dl.download_audio(
-                raw_url=url_clean,
-                output_dir=output_dir,
-                audio_format=audio_format,
-                bitrate=bitrate,
-                progress_callback=self.progress_callback,
-                is_cancelled=self.is_cancelled,
-            )
-            return self._downloaded_path
+        if "douyin.com" in url_clean.lower():
+            try:
+                from core.douyin import DouyinDownloader
+                if DouyinDownloader.is_douyin_url(url_clean):
+                    douyin_dl = DouyinDownloader()
+                    self._downloaded_path = douyin_dl.download_audio(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        audio_format=audio_format,
+                        bitrate=bitrate,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+            except Exception as dy_err:
+                if isinstance(dy_err, InterruptedError):
+                    raise
+                pass
 
         # ── 1. HỖ TRỢ CHUYÊN BIỆT: Epidemic Sound (www.epidemicsound.com) ──
         if "epidemicsound.com" in url_clean.lower() and "audiocdn.epidemicsound.com" not in url_clean:

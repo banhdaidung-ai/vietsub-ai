@@ -8,7 +8,22 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from curl_cffi import requests
+def _get_requests():
+    try:
+        from curl_cffi import requests as cffi_requests
+        return cffi_requests
+    except Exception:
+        import requests as std_requests
+        return std_requests
+
+
+class _RequestsProxy:
+    def __getattr__(self, name):
+        req = _get_requests()
+        return getattr(req, name)
+
+
+requests = _RequestsProxy()
 
 from utils.ffmpeg_check import get_ffmpeg_path
 

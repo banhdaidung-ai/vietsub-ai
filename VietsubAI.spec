@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
 
 block_cipher = None
 
@@ -29,6 +29,12 @@ for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
+
+# Đảm bảo metadata của curl_cffi luôn có mặt để importlib.metadata không bị lỗi
+try:
+    datas += copy_metadata('curl_cffi')
+except Exception:
+    pass
 
 # Lọc bỏ các module test và file rác của thư viện để giảm dung lượng
 hiddenimports = [h for h in set(hiddenimports) if not any(t in h for t in ['.tests', '.test_', 'testing', 'tests'])]

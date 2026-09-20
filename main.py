@@ -18,6 +18,33 @@ if sys.stderr is None:
     except Exception:
         pass
 
+# Vá lỗi PackageNotFoundError cho curl_cffi khi đóng gói PyInstaller trên Windows
+try:
+    import importlib.metadata as _meta
+    _orig_meta = _meta.metadata
+    _orig_ver = _meta.version
+
+    def _safe_metadata(name: str):
+        try:
+            return _orig_meta(name)
+        except _meta.PackageNotFoundError:
+            if name and name.lower().replace("-", "_") == "curl_cffi":
+                return {"Summary": "curl_cffi", "Version": "0.16.3", "Name": "curl_cffi"}
+            raise
+
+    def _safe_version(name: str):
+        try:
+            return _orig_ver(name)
+        except _meta.PackageNotFoundError:
+            if name and name.lower().replace("-", "_") == "curl_cffi":
+                return "0.16.3"
+            raise
+
+    _meta.metadata = _safe_metadata
+    _meta.version = _safe_version
+except Exception:
+    pass
+
 # Cấu hình chứng chỉ SSL (certifi) cho Windows và frozen bundles để tải mạng không bị lỗi CERTIFICATE_VERIFY_FAILED
 try:
     import certifi

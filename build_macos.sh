@@ -65,9 +65,7 @@ APP_RES="dist/VietsubAI.app/Contents/Resources"
 rm -rf "$APP_FW/torch/bin/protoc"* 2>/dev/null || true
 echo "   ✂️  Đã xóa protoc (~7.6MB)"
 
-# 6c. Xóa .dist-info (metadata cài đặt, không cần khi chạy)
-find "dist/VietsubAI.app" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-echo "   ✂️  Đã xóa .dist-info metadata"
+# 6c. Giữ nguyên .dist-info để bảo toàn metadata cho importlib (curl_cffi)
 
 # 6d. Xóa __pycache__ (Python tự tạo lại khi cần)
 find "dist/VietsubAI.app" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

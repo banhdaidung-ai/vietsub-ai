@@ -42,11 +42,10 @@ jobs:
               cp bin/ffprobe "dist/VietsubAI.app/Contents/MacOS/" 2>/dev/null || true
           fi
           chmod +x "dist/VietsubAI.app/Contents/MacOS/ffmpeg" "dist/VietsubAI.app/Contents/MacOS/ffprobe" 2>/dev/null || true
-          # Dọn rác an toàn
+          # Dọn rác an toàn (giữ nguyên .dist-info để bảo toàn metadata cho curl_cffi)
           APP_FW="dist/VietsubAI.app/Contents/Frameworks"
           APP_RES="dist/VietsubAI.app/Contents/Resources"
           rm -rf "$APP_FW/torch/bin/protoc"* 2>/dev/null || true
-          find "dist/VietsubAI.app" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
           find "dist/VietsubAI.app" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           rm -f "$APP_RES/assets/icon.icns" 2>/dev/null || true
           find "dist/VietsubAI.app" -name "*.pyc" -delete 2>/dev/null || true
@@ -105,8 +104,7 @@ jobs:
           if (-not (Test-Path "dist\VietsubAI\ffprobe.exe") -and (Test-Path "bin\ffprobe.exe")) {
               Copy-Item "bin\ffprobe.exe" -Destination "dist\VietsubAI\" -Force
           }
-          # Dọn rác an toàn cho Windows
-          Get-ChildItem -Path "dist\VietsubAI" -Filter "*.dist-info" -Directory -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          # Dọn rác an toàn cho Windows (giữ nguyên .dist-info để bảo toàn metadata cho curl_cffi)
           Get-ChildItem -Path "dist\VietsubAI" -Filter "__pycache__" -Directory -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           Write-Host "Đã nhúng đầy đủ ffmpeg.exe và ffprobe.exe vào bản Windows!"
 

@@ -10,7 +10,9 @@ import tempfile
 import time
 from typing import Callable, Optional
 
-from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path
+import re
+import threading
+from utils.ffmpeg_check import get_ffmpeg_path, get_ffprobe_path, get_video_duration
 from utils.subtitle_styles import build_ffmpeg_subtitle_style
 
 
@@ -18,8 +20,14 @@ def _run_ffmpeg_cancellable(
     cmd: list,
     cwd: Optional[str] = None,
     is_cancelled: Optional[Callable[[], bool]] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    total_duration_sec: Optional[float] = None,
 ) -> subprocess.CompletedProcess:
-    """Thực thi lệnh FFmpeg có khả năng hủy ngay lập tức khi nhận cờ is_cancelled."""
+    """
+    Thực thi lệnh FFmpeg có khả năng hủy ngay lập tức và chống deadlock buffer trên Windows:
+    - Đọc stream stderr liên tục bằng background thread để tránh đầy pipe buffer (64KB) làm treo FFmpeg.
+    - Parse thời gian render `time=HH:MM:SS.ms` để cập nhật tiến trình % thực tế.
+    """
     if is_cancelled and is_cancelled():
         raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
 
@@ -30,13 +38,41 @@ def _run_ffmpeg_cancellable(
     p = subprocess.Popen(
         cmd,
         cwd=cwd,
-        stdout=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
+        bufsize=1,
         creationflags=creationflags,
     )
+
+    stderr_lines = []
+    last_report_time = 0.0
+
+    def reader():
+        nonlocal last_report_time
+        try:
+            for line in p.stderr:
+                stderr_lines.append(line)
+                if progress_callback and total_duration_sec and total_duration_sec > 0:
+                    m = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
+                    if m:
+                        now = time.time()
+                        if now - last_report_time >= 0.4:
+                            last_report_time = now
+                            h, m_val, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+                            cur_sec = h * 3600 + m_val * 60 + s
+                            pct = min(cur_sec / total_duration_sec, 0.98)
+                            progress_callback(
+                                0.1 + pct * 0.88,
+                                f"Đang render video: {pct * 100:.0f}% ({int(cur_sec)}s/{int(total_duration_sec)}s)..."
+                            )
+        except Exception:
+            pass
+
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
 
     while p.poll() is None:
         if is_cancelled and is_cancelled():
@@ -44,11 +80,13 @@ def _run_ffmpeg_cancellable(
                 p.kill()
             except Exception:
                 pass
+            t.join(timeout=1.0)
             raise InterruptedError("Tiến trình đã bị hủy bởi người dùng.")
-        time.sleep(0.2)
+        time.sleep(0.1)
 
-    stdout, stderr = p.communicate()
-    return subprocess.CompletedProcess(args=cmd, returncode=p.returncode, stdout=stdout, stderr=stderr)
+    t.join(timeout=2.0)
+    stderr_text = "".join(stderr_lines)
+    return subprocess.CompletedProcess(args=cmd, returncode=p.returncode, stdout="", stderr=stderr_text)
 
 
 def check_has_audio(video_path: str) -> bool:
@@ -138,7 +176,7 @@ class FFmpegProcessor:
         - Nếu sub_only=False: Mix âm thanh gốc + TTS, hoặc thay hoàn toàn bằng TTS
         """
         ffmpeg = get_ffmpeg_path() or "ffmpeg"
-        self._report(0.1, "Đang encode video (có thể mất vài phút)...")
+        self._report(0.1, "Đang chuẩn bị render video...")
 
         abs_video_path = os.path.abspath(video_path)
         abs_output_path = os.path.abspath(output_path)
@@ -146,6 +184,13 @@ class FFmpegProcessor:
         out_dir = os.path.dirname(abs_output_path)
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
+
+        # Lấy thời lượng video để tính % tiến trình render thực tế
+        total_duration = 0.0
+        try:
+            total_duration = get_video_duration(abs_video_path)
+        except Exception:
+            pass
 
         # Tạo file SRT tạm trong tempdir với tên ASCII thuần túy và chuẩn hóa nội dung SRT
         from utils.srt_parser import normalize_srt_content, parse_srt
@@ -190,7 +235,7 @@ class FFmpegProcessor:
                         "-map", "1:a:0",
                         "-c:v", "libx264",
                         "-crf", "23",
-                        "-preset", "medium",
+                        "-preset", "fast",
                         "-c:a", "aac",
                         "-b:a", "192k",
                         "-shortest",
@@ -216,7 +261,7 @@ class FFmpegProcessor:
                         "-map", "[aout]",
                         "-c:v", "libx264",
                         "-crf", "23",
-                        "-preset", "medium",
+                        "-preset", "fast",
                         "-c:a", "aac",
                         "-b:a", "192k",
                         abs_output_path,
@@ -225,6 +270,8 @@ class FFmpegProcessor:
                     cmd,
                     cwd=temp_dir,
                     is_cancelled=is_cancelled,
+                    progress_callback=self._report,
+                    total_duration_sec=total_duration,
                 )
 
             # Chế độ chỉ gắn phụ đề, giữ nguyên âm thanh gốc
@@ -239,7 +286,7 @@ class FFmpegProcessor:
                 cmd += [
                     "-c:v", "libx264",
                     "-crf", "23",
-                    "-preset", "medium",
+                    "-preset", "fast",
                     "-c:a", "copy",
                     abs_output_path,
                 ]
@@ -247,6 +294,8 @@ class FFmpegProcessor:
                     cmd,
                     cwd=temp_dir,
                     is_cancelled=is_cancelled,
+                    progress_callback=self._report,
+                    total_duration_sec=total_duration,
                 )
                 if result.returncode != 0:
                     self._report(0.4, "Đang re-encode âm thanh chuẩn AAC...")
@@ -259,7 +308,7 @@ class FFmpegProcessor:
                     cmd_fallback += [
                         "-c:v", "libx264",
                         "-crf", "23",
-                        "-preset", "medium",
+                        "-preset", "fast",
                         "-c:a", "aac",
                         "-b:a", "192k",
                         abs_output_path,
@@ -268,6 +317,8 @@ class FFmpegProcessor:
                         cmd_fallback,
                         cwd=temp_dir,
                         is_cancelled=is_cancelled,
+                        progress_callback=self._report,
+                        total_duration_sec=total_duration,
                     )
 
                 if result.returncode != 0:
