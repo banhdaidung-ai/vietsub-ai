@@ -165,6 +165,9 @@ jobs:
             - **🎙️ Khóa Cố Định 1 Giọng Đọc & Tự Động Đồng Bộ Phụ Đề Chuẩn Khớp 1:1:**
               - Duy trì ổn định 100% giọng đọc Microsoft Edge Neural đã chọn với cơ chế tự động thử lại khi gián đoạn mạng.
               - Thuật toán Ripple Scheduling & Non-Colliding Scheduler tự động đồng bộ phụ đề chữ khớp chính xác 100% theo nhịp giọng đọc AI thực tế, bảo vệ câu cuối không bao giờ bị cắt cụt.
+            - **✨ Tối Ưu Bảng Log Trạng Thái & Tự Hồi Phục Kết Nối Âm Thầm (Silent Self-Healing):**
+              - Loại bỏ hoàn toàn các dòng cảnh báo ngắt kết nối/thử lại tạm thời trên bảng Log gây hoang mang tâm lý người dùng.
+              - Hệ thống tự động kiên trì kết nối lại âm thầm trong nền (Silent Retry); bảng Log chỉ tập trung hiển thị các mốc tiến trình tích cực, rõ ràng và các thông báo trạng thái thành công hoàn hảo.
             - **⚡ Hiệu Năng & Ổn Định:**
               - Tích hợp FFmpeg 7.1, Demucs AI và pipeline render video mượt mà, không gián đoạn.
 

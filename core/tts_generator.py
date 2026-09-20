@@ -280,12 +280,10 @@ class TTSGenerator:
                 )
                 await communicate.save(out_path)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                    if attempt > 1:
-                        self._log(f"   ✅ Đã kết nối lại và tạo thành công giọng {current_voice} ở lần thử thứ {attempt}!")
                     return True
             except (InterruptedError, KeyboardInterrupt):
                 raise
-            except Exception as e:
+            except Exception:
                 # Xóa file 0 byte nếu có
                 if os.path.exists(out_path) and os.path.getsize(out_path) == 0:
                     try:
@@ -293,22 +291,9 @@ class TTSGenerator:
                     except Exception:
                         pass
 
-                # Tăng dần thời gian chờ: 1.0s -> 1.5s -> 2.0s -> ... tối đa 5.0s để kết nối hồi phục
+                # Tự động kết nối lại âm thầm trong nền (Silent Self-Healing Retry),
+                # không spam thông báo gián đoạn vào khung LOG để giữ tâm lý người dùng luôn an tâm.
                 wait_sec = min(1.0 + 0.5 * min(attempt, 8), 5.0)
-                err_str = str(e)
-                if "No audio was received" in err_str:
-                    err_hint = "Máy chủ Microsoft ngắt kết nối tạm thời"
-                elif "WSServerHandshakeError" in err_str or "ClientResponseError" in err_str:
-                    err_hint = "Lỗi bắt tay WebSocket với máy chủ Microsoft"
-                elif "ConnectionResetError" in err_str or "BrokenPipeError" in err_str:
-                    err_hint = "Kết nối mạng bị gián đoạn"
-                else:
-                    err_hint = err_str
-
-                self._log(
-                    f"   🔄 Giọng {voice_name} gặp gián đoạn ({err_hint}). "
-                    f"Đang tự động thử lại lần {attempt + 1} (chờ {wait_sec:.1f}s cho đến khi thành công)..."
-                )
                 await asyncio.sleep(wait_sec)
 
     def _generate_single_gemini_tts(self, text: str, out_path: str) -> bool:
@@ -373,19 +358,16 @@ class TTSGenerator:
                                 pass
 
                             if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                                if attempt > 1:
-                                    self._log(f"   ✅ Đã kết nối lại và tạo thành công giọng Gemini ({gemini_voice}) ở lần thử thứ {attempt}!")
                                 return True
             except (InterruptedError, KeyboardInterrupt):
                 raise
             except Exception as e:
                 err_str = str(e)
+                # Tự động thử lại âm thầm trong nền, không spam thông báo gián đoạn vào LOG
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
                     wait_sec = min(5.0 * attempt, 20.0)
-                    self._log(f"   ⏳ Gemini TTS chạm hạn ngạch (429). Đang chờ {wait_sec:.0f}s để thử lại lần {attempt + 1} với giọng {gemini_voice}...")
                 else:
                     wait_sec = min(1.5 + 0.5 * min(attempt, 6), 5.0)
-                    self._log(f"   🔄 Gemini TTS gặp gián đoạn ({err_str}). Đang thử lại lần {attempt + 1} (chờ {wait_sec:.1f}s)...")
                 time.sleep(wait_sec)
 
     def _create_silence_audio(self, ffmpeg: str, duration_sec: float, out_path: str) -> bool:

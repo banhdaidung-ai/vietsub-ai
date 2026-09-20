@@ -287,11 +287,11 @@ async def test_consistent_tts_voice_retention():
 @pytest.mark.asyncio
 async def test_persistent_edge_tts_retry_until_success():
     """Kiểm tra cơ chế kiên trì thử lại: Gặp lỗi mạng tạm thời sẽ tự động thử lại cho đến khi thành công 100%."""
-    logs = []
+    logged_msgs = []
     gen = TTSGenerator(
         voice="vi-VN-NamMinhNeural",
         tts_technology="edge",
-        log_callback=lambda msg: logs.append(msg),
+        log_callback=lambda msg: logged_msgs.append(msg),
     )
 
     call_count = 0
@@ -316,6 +316,10 @@ async def test_persistent_edge_tts_retry_until_success():
             success = await gen._generate_single_edge_tts("Xin chào Việt Nam", tmp_out)
             assert success is True
             assert call_count == 3
+            # Đảm bảo không spam bất kỳ thông báo lỗi/ngắt kết nối nào vào Log
+            for msg in logged_msgs:
+                assert "gián đoạn" not in msg
+                assert "ngắt kết nối" not in msg
 
 def test_clause_continuation_detection():
     """Kiểm tra nhận diện câu nối giữa các card phụ đề để giữ ngữ điệu liền mạch."""
