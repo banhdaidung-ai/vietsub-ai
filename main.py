@@ -56,6 +56,22 @@ try:
 except Exception:
     pass
 
+# Cấu hình đường dẫn trình duyệt cho Playwright (đặc biệt quan trọng khi đóng gói PyInstaller)
+# Tránh bị Playwright ép PLAYWRIGHT_BROWSERS_PATH=0 gây lỗi không tìm thấy Chromium trong app bundle
+if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+    if sys.platform == "darwin":
+        _pw_cache = Path.home() / "Library" / "Caches" / "ms-playwright"
+    elif sys.platform == "win32":
+        _local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        _pw_cache = Path(_local) / "ms-playwright"
+    else:
+        _pw_cache = Path.home() / ".cache" / "ms-playwright"
+    try:
+        _pw_cache.mkdir(parents=True, exist_ok=True)
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_pw_cache)
+    except Exception:
+        pass
+
 # Kiểm tra nếu đang chạy bằng Python cũ của macOS (Tk 8.5 gây lỗi màn hình trắng trong CustomTkinter)
 # Tự động chuyển hướng sang môi trường Python hiện đại trong .venv (Tk 9.0)
 if not getattr(sys, "frozen", False):
@@ -71,6 +87,23 @@ if not getattr(sys, "frozen", False):
 from gui.app_window import AppWindow
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--test-douyin":
+        import traceback
+        test_url = sys.argv[2] if len(sys.argv) > 2 else "https://v.douyin.com/iy0w9aEkDFM/"
+        print(f"Testing Douyin download in environment for: {test_url}")
+        try:
+            from core.downloader import VideoDownloader
+            dl = VideoDownloader(progress_callback=lambda p, s: print(f"[{p*100:.1f}%] {s}"))
+            import tempfile
+            with tempfile.TemporaryDirectory() as td:
+                res = dl.download(test_url, td)
+                print("SUCCESSFULLY DOWNLOADED TO:", res)
+        except Exception as e:
+            print("ERROR CAUGHT:")
+            traceback.print_exc()
+        sys.exit(0)
+
     app = AppWindow()
     app.mainloop()
+
 

@@ -1929,6 +1929,11 @@ class AppWindow(_BaseWindow):
                 self.task_queue.put({"type": "log", "message": "⚠️ Tiến trình tải đã bị hủy."})
                 self.task_queue.put({"type": "progress", "value": 0.0, "label": "Đã hủy"})
             except Exception as e:
+                import traceback
+                try:
+                    (Path.home() / ".vietsub_ai" / "last_download_error.log").write_text(traceback.format_exc(), encoding="utf-8")
+                except Exception:
+                    pass
                 self.task_queue.put({"type": "log", "message": f"❌ Lỗi khi tải video: {e}"})
                 self.task_queue.put({"type": "progress", "value": 0.0, "label": "Thất bại"})
             finally:
@@ -2010,6 +2015,11 @@ class AppWindow(_BaseWindow):
                 self.task_queue.put({"type": "log", "message": "⚠️ Tiến trình tải nhạc đã bị hủy."})
                 self.task_queue.put({"type": "progress", "value": 0.0, "label": "Đã hủy"})
             except Exception as e:
+                import traceback
+                try:
+                    (Path.home() / ".vietsub_ai" / "last_download_error.log").write_text(traceback.format_exc(), encoding="utf-8")
+                except Exception:
+                    pass
                 self.task_queue.put({"type": "log", "message": f"❌ Lỗi khi tải nhạc: {e}"})
                 self.task_queue.put({"type": "progress", "value": 0.0, "label": "Thất bại"})
             finally:

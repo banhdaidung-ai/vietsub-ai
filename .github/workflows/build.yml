@@ -168,6 +168,9 @@ jobs:
             - **✨ Tối Ưu Bảng Log Trạng Thái & Tự Hồi Phục Kết Nối Âm Thầm (Silent Self-Healing):**
               - Loại bỏ hoàn toàn các dòng cảnh báo ngắt kết nối/thử lại tạm thời trên bảng Log gây hoang mang tâm lý người dùng.
               - Hệ thống tự động kiên trì kết nối lại âm thầm trong nền (Silent Retry); bảng Log chỉ tập trung hiển thị các mốc tiến trình tích cực, rõ ràng và các thông báo trạng thái thành công hoàn hảo.
+            - **📸 Hỗ Trợ Tải Instagram Reels / Video Ổn Định Tuyệt Đối:**
+              - Vượt qua cơ chế giới hạn rate-limit và redirect đăng nhập của Instagram bằng iOS Mobile API client chuyên dụng (`app_id=124024574287414`).
+              - Tự động nhận diện và nạp `cookies.txt` (nếu có trong `~/.vietsub_ai/cookies.txt`) để tải các nội dung giới hạn riêng tư.
             - **⚡ Hiệu Năng & Ổn Định:**
               - Tích hợp FFmpeg 7.1, Demucs AI và pipeline render video mượt mà, không gián đoạn.
 

@@ -84,9 +84,14 @@ echo "   ✂️  Đã xóa icon trùng lặp (~1.9MB)"
 # 6f. Xóa file .pyc rời rạc không trong __pycache__
 find "dist/VietsubAI.app" -name "*.pyc" -delete 2>/dev/null || true
 
+# 6g. Cấp quyền ghi và Ký lại Ad-hoc để đảm bảo chữ ký Mach-O hợp lệ sau khi dọn rác & chèn FFmpeg
+echo "🔐 Đang ký mã Ad-hoc (ad-hoc codesign) cho toàn bộ gói bundle..."
+chmod -R u+w "dist/VietsubAI.app"
+codesign -s - --force --deep "dist/VietsubAI.app"
+
 # Hiển thị dung lượng sau khi dọn
 AFTER_SIZE=$(du -sh "dist/VietsubAI.app" | cut -f1)
-echo "   📦 Dung lượng .app sau khi dọn rác: $AFTER_SIZE"
+echo "   📦 Dung lượng .app sau khi hoàn tất: $AFTER_SIZE"
 
 echo "✅ Đã tạo thành công: dist/VietsubAI.app (Đã tích hợp đầy đủ FFmpeg & FFprobe và Demucs AI)"
 
@@ -108,10 +113,25 @@ hdiutil create -volname "Vietsub AI" -srcfolder "$DMG_TEMP" -ov -format UDZO "di
 # Dọn dẹp thư mục tạm
 rm -rf "$DMG_TEMP"
 
+# 6. Tùy chọn cài đặt trực tiếp vào hệ thống (/Applications)
+if [ "$1" = "--install" ] || [ "$INSTALL_TO_APPS" = "1" ]; then
+    echo ""
+    echo "📲 Đang cài đặt Vietsub AI vào /Applications..."
+    rm -rf "/Applications/Vietsub AI.app" "/Applications/VietsubAI.app"
+    cp -R "dist/VietsubAI.app" "/Applications/Vietsub AI.app"
+    chmod -R u+w "/Applications/Vietsub AI.app"
+    xattr -cr "/Applications/Vietsub AI.app" 2>/dev/null || true
+    echo "✅ Đã cài đặt thành công vào: /Applications/Vietsub AI.app"
+fi
+
 echo ""
 echo "=========================================================="
 echo "🎉 HOÀN TẤT ĐÓNG GÓI MACOS!"
 echo "📍 Ứng dụng: dist/VietsubAI.app"
 echo "📍 File cài đặt: dist/VietsubAI.dmg"
+if [ "$1" = "--install" ] || [ "$INSTALL_TO_APPS" = "1" ]; then
+    echo "📍 Đã cài đặt tại: /Applications/Vietsub AI.app"
+fi
 echo "=========================================================="
 ls -lh dist/VietsubAI.dmg
+

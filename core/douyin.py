@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import urllib.parse
 from pathlib import Path
@@ -30,6 +31,23 @@ requests = _RequestsProxy()
 from utils.ffmpeg_check import get_ffmpeg_path
 
 
+def _ensure_playwright_browsers_path():
+    """Đảm bảo PLAYWRIGHT_BROWSERS_PATH luôn trỏ về thư mục cache trình duyệt hợp lệ khi đóng gói."""
+    if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        if sys.platform == "darwin":
+            _cache = Path.home() / "Library" / "Caches" / "ms-playwright"
+        elif sys.platform == "win32":
+            _local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+            _cache = Path(_local) / "ms-playwright"
+        else:
+            _cache = Path.home() / ".cache" / "ms-playwright"
+        try:
+            _cache.mkdir(parents=True, exist_ok=True)
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_cache)
+        except Exception:
+            pass
+
+
 class DouyinDownloader:
     """
     Trình bóc tách và tải video / âm thanh từ Douyin (TikTok Trung Quốc).
@@ -51,6 +69,16 @@ class DouyinDownloader:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) "
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
     )
+
+    @classmethod
+    def get_browser_user_agent(cls) -> str:
+        if sys.platform == "darwin":
+            return (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/128.0.0.0 Safari/537.36"
+            )
+        return cls.USER_AGENT
 
     @classmethod
     def is_douyin_url(cls, text: str) -> bool:
@@ -258,6 +286,7 @@ class DouyinDownloader:
             progress_callback(0.02, "Đang giải mã liên kết Douyin...")
 
         aweme_id = self.resolve_aweme_id(raw_url)
+        target_video_url = f"https://www.douyin.com/video/{aweme_id}"
 
         if is_cancelled and is_cancelled():
             raise InterruptedError("Tiến trình tải đã bị hủy.")
@@ -265,7 +294,21 @@ class DouyinDownloader:
         if progress_callback:
             progress_callback(0.05, "Đang kết nối máy chủ Douyin & lấy luồng video gốc...")
 
-        aweme = self.get_aweme_detail(aweme_id)
+        try:
+            aweme = self.get_aweme_detail(aweme_id)
+        except Exception as e:
+            # Khi máy chủ Douyin chặn Web API (403 ArgusSecurityPlugin / captcha)
+            # Tự động kích hoạt bộ nạp trình duyệt Headless Chromium để bóc tách luồng trực tiếp
+            if progress_callback:
+                progress_callback(0.08, "Máy chủ Douyin yêu cầu bảo mật, đang kích hoạt trình duyệt giải mã...")
+            return self.download_video_via_browser(
+                target_url=target_video_url,
+                aweme_id=aweme_id,
+                output_dir=output_dir,
+                progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+
         raw_desc = aweme.get("desc", "")
         title = self.clean_title(raw_desc, aweme_id)
 
@@ -444,6 +487,309 @@ class DouyinDownloader:
 
         raise RuntimeError(f"Không thể tải video Douyin: {last_err or 'Các máy chủ CDN không phản hồi'}")
 
+    def download_video_via_browser(
+        self,
+        target_url: str,
+        aweme_id: str,
+        output_dir: str,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> str:
+        """
+        Bypass bảo vệ chống bot Douyin (ArgusSecurityPlugin / Slider verification)
+        bằng cách khởi chạy Chromium headless, tự động bắt luồng video gốc khi đang phát.
+        """
+        _ensure_playwright_browsers_path()
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise RuntimeError(
+                "Gói thư viện 'playwright' chưa được cài đặt.\n"
+                "Vui lòng chạy: pip install playwright && playwright install chromium"
+            )
+
+        profile_dir = Path.home() / ".cache" / "vietsub_douyin_profile"
+        try:
+            profile_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+        if progress_callback:
+            progress_callback(0.10, "Đang khởi chạy trình duyệt giải mã Douyin...")
+
+        browser_ua = self.get_browser_user_agent()
+
+        def _install_chromium_if_needed():
+            try:
+                if getattr(sys, "frozen", False):
+                    try:
+                        from playwright._impl._driver import compute_driver_executable
+                        node_bin, cli_js = compute_driver_executable()
+                        subprocess.run([node_bin, cli_js, "install", "chromium"], check=False)
+                    except Exception:
+                        pass
+                else:
+                    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+            except Exception:
+                pass
+
+        with sync_playwright() as p:
+            launch_args = [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-infobars",
+                "--disable-gpu",
+            ]
+            context = None
+            browser_instance = None
+
+            # 1. Thử dùng persistent context để tối ưu cookies/session
+            try:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    headless=True,
+                    args=launch_args,
+                    user_agent=browser_ua,
+                    viewport={"width": 1280, "height": 800},
+                )
+            except Exception as e_launch:
+                if "Executable doesn't exist" in str(e_launch) or "playwright install" in str(e_launch):
+                    _install_chromium_if_needed()
+                    try:
+                        context = p.chromium.launch_persistent_context(
+                            user_data_dir=str(profile_dir),
+                            headless=True,
+                            args=launch_args,
+                            user_agent=browser_ua,
+                            viewport={"width": 1280, "height": 800},
+                        )
+                    except Exception:
+                        pass
+
+            # 2. Nếu persistent context thất bại (vd do SingletonLock), fallback sang launch thông thường
+            if context is None:
+                try:
+                    browser_instance = p.chromium.launch(headless=True, args=launch_args)
+                except Exception as e_b:
+                    if "Executable doesn't exist" in str(e_b) or "playwright install" in str(e_b):
+                        _install_chromium_if_needed()
+                        browser_instance = p.chromium.launch(headless=True, args=launch_args)
+                    else:
+                        raise
+                context = browser_instance.new_context(
+                    user_agent=browser_ua,
+                    viewport={"width": 1280, "height": 800},
+                )
+
+            page = context.pages[0] if context.pages else context.new_page()
+
+            combined_urls: List[str] = []
+            video_urls: List[str] = []
+            audio_urls: List[str] = []
+
+            def on_req(req):
+                u = req.url
+                if any(h in u for h in ("douyinvod.com", "snssdk.com", "amemv.com", "zjcdn.com")) and "video/tos" in u:
+                    if "media-video" in u:
+                        if u not in video_urls:
+                            video_urls.append(u)
+                    elif "media-audio" in u:
+                        if u not in audio_urls:
+                            audio_urls.append(u)
+                    else:
+                        if u not in combined_urls:
+                            combined_urls.append(u)
+
+            page.on("request", on_req)
+
+            if progress_callback:
+                progress_callback(0.15, "Đang nạp trang video Douyin...")
+
+            try:
+                page.goto(target_url, timeout=20000)
+            except Exception:
+                pass
+
+            if is_cancelled and is_cancelled():
+                context.close()
+                raise InterruptedError("Tiến trình tải đã bị hủy.")
+
+            # Tự động đóng popup captcha / login nếu Douyin hiển thị
+            page.wait_for_timeout(1500)
+            page.mouse.click(629, 296)
+            page.wait_for_timeout(400)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+            page.keyboard.press("Escape")
+
+            # Chờ luồng stream video/audio xuất hiện
+            for _ in range(40):
+                if is_cancelled and is_cancelled():
+                    context.close()
+                    raise InterruptedError("Tiến trình tải đã bị hủy.")
+                if combined_urls or (video_urls and audio_urls):
+                    break
+                page.wait_for_timeout(300)
+
+            # Lấy tiêu đề video từ trang
+            raw_title = page.title() or f"douyin_{aweme_id}"
+            if " - 抖音" in raw_title:
+                raw_title = raw_title.replace(" - 抖音", "")
+            title = self.clean_title(raw_title, aweme_id)
+
+            cookies = context.cookies()
+            cookie_header = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+
+            try:
+                context.close()
+            except Exception:
+                pass
+            if browser_instance:
+                try:
+                    browser_instance.close()
+                except Exception:
+                    pass
+
+        if not combined_urls and not (video_urls and audio_urls):
+            raise RuntimeError(
+                "Không thể trích xuất luồng video Douyin khả dụng.\n"
+                "Có thể video riêng tư, đã bị xóa hoặc máy chủ Douyin tạm thời giới hạn."
+            )
+
+        out_file = Path(output_dir) / f"{title}.mp4"
+        counter = 1
+        while out_file.exists():
+            out_file = Path(output_dir) / f"{title} ({counter}).mp4"
+            counter += 1
+
+        headers = {
+            "User-Agent": browser_ua,
+            "Referer": "https://www.douyin.com/",
+            "Cookie": cookie_header,
+        }
+
+        # Trường hợp 1: Có luồng video hoàn chỉnh (combined mp4)
+        if combined_urls:
+            stream_url = combined_urls[0]
+            if progress_callback:
+                progress_callback(0.25, "Đang tải luồng video trực tiếp...")
+
+            tmp_file = Path(output_dir) / f"temp_{title}_{int(time.time())}.tmp"
+            r = requests.get(stream_url, headers=headers, stream=True, impersonate="chrome120", timeout=30)
+            if r.status_code not in (200, 206):
+                raise RuntimeError(f"Máy chủ CDN Douyin từ chối kết nối (HTTP {r.status_code}).")
+
+            total_bytes = int(r.headers.get("content-length", 0))
+            downloaded = 0
+            start_time = time.time()
+            last_report_time = 0.0
+
+            with open(tmp_file, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if is_cancelled and is_cancelled():
+                        try:
+                            tmp_file.unlink()
+                        except Exception:
+                            pass
+                        raise InterruptedError("Tiến trình tải đã bị hủy.")
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        now = time.time()
+                        if progress_callback and (now - last_report_time >= 0.25):
+                            last_report_time = now
+                            elapsed = max(now - start_time, 0.001)
+                            speed = downloaded / elapsed
+                            speed_str = f" - {speed / 1048576:.1f}MB/s" if speed > 0 else ""
+                            if total_bytes > 0:
+                                pct = min(0.25 + (downloaded / total_bytes) * 0.70, 0.98)
+                                mb_d = downloaded / 1048576
+                                mb_t = total_bytes / 1048576
+                                progress_callback(
+                                    pct,
+                                    f"Đang tải video Douyin: {pct * 100:.0f}% ({mb_d:.1f}MB/{mb_t:.1f}MB{speed_str})",
+                                )
+                            else:
+                                mb_d = downloaded / 1048576
+                                progress_callback(0.6, f"Đang tải video Douyin: {mb_d:.1f}MB{speed_str}")
+
+            shutil.move(str(tmp_file), str(out_file))
+            if progress_callback:
+                progress_callback(1.0, f"Đã tải xong: {out_file.name}")
+            return str(out_file)
+
+        # Trường hợp 2: Có 2 luồng hình ảnh và âm thanh riêng biệt -> Ghép bằng FFmpeg
+        if video_urls and audio_urls:
+            tmp_v = Path(output_dir) / f"temp_v_{int(time.time())}.mp4"
+            tmp_a = Path(output_dir) / f"temp_a_{int(time.time())}.mp4"
+
+            if progress_callback:
+                progress_callback(0.25, "Đang tải luồng hình ảnh chất lượng cao...")
+
+            # Tải video track
+            r_v = requests.get(video_urls[0], headers=headers, stream=True, impersonate="chrome120", timeout=30)
+            total_v = int(r_v.headers.get("content-length", 0))
+            down_v = 0
+            with open(tmp_v, "wb") as f:
+                for chunk in r_v.iter_content(chunk_size=1024 * 1024):
+                    if is_cancelled and is_cancelled():
+                        try:
+                            tmp_v.unlink()
+                        except Exception:
+                            pass
+                        raise InterruptedError("Tiến trình tải đã bị hủy.")
+                    if chunk:
+                        f.write(chunk)
+                        down_v += len(chunk)
+                        if progress_callback and total_v > 0:
+                            pct = 0.25 + (down_v / total_v) * 0.45
+                            progress_callback(pct, f"Đang tải video: {down_v / 1048576:.1f}MB/{total_v / 1048576:.1f}MB")
+
+            if progress_callback:
+                progress_callback(0.70, "Đang tải luồng âm thanh gốc...")
+
+            # Tải audio track
+            r_a = requests.get(audio_urls[0], headers=headers, stream=True, impersonate="chrome120", timeout=30)
+            total_a = int(r_a.headers.get("content-length", 0))
+            down_a = 0
+            with open(tmp_a, "wb") as f:
+                for chunk in r_a.iter_content(chunk_size=1024 * 1024):
+                    if is_cancelled and is_cancelled():
+                        try:
+                            tmp_v.unlink()
+                            tmp_a.unlink()
+                        except Exception:
+                            pass
+                        raise InterruptedError("Tiến trình tải đã bị hủy.")
+                    if chunk:
+                        f.write(chunk)
+                        down_a += len(chunk)
+                        if progress_callback and total_a > 0:
+                            pct = 0.70 + (down_a / total_a) * 0.20
+                            progress_callback(pct, f"Đang tải âm thanh: {down_a / 1048576:.1f}MB/{total_a / 1048576:.1f}MB")
+
+            if progress_callback:
+                progress_callback(0.92, "Đang ghép hình ảnh và âm thanh bằng FFmpeg...")
+
+            ffmpeg = get_ffmpeg_path() or "ffmpeg"
+            cmd = [ffmpeg, "-y", "-i", str(tmp_v), "-i", str(tmp_a), "-c", "copy", "-shortest", str(out_file)]
+            res = run_hidden_subprocess(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+            try:
+                tmp_v.unlink()
+                tmp_a.unlink()
+            except Exception:
+                pass
+
+            if res.returncode != 0:
+                raise RuntimeError(f"Lỗi ghép file video Douyin: {res.stderr[:300]}")
+
+            if progress_callback:
+                progress_callback(1.0, f"Đã tải xong: {out_file.name}")
+            return str(out_file)
+
+        raise RuntimeError("Không thể tải video Douyin qua trình duyệt.")
+
     def download_audio(
         self,
         raw_url: str,
@@ -473,10 +819,14 @@ class DouyinDownloader:
         if progress_callback:
             progress_callback(0.05, "Đang kết nối lấy thông tin âm thanh Douyin...")
 
-        aweme = self.get_aweme_detail(aweme_id)
-        music = aweme.get("music", {})
-        music_urls = music.get("play_url", {}).get("url_list", [])
-        raw_title = music.get("title") or aweme.get("desc") or f"douyin_{aweme_id}"
+        try:
+            aweme = self.get_aweme_detail(aweme_id)
+            music = aweme.get("music", {})
+            music_urls = music.get("play_url", {}).get("url_list", [])
+            raw_title = music.get("title") or aweme.get("desc") or f"douyin_{aweme_id}"
+        except Exception:
+            music_urls = []
+            raw_title = f"douyin_{aweme_id}"
         title = self.clean_title(raw_title, aweme_id)
 
         out_path = Path(output_dir) / f"{title}.{target_ext}"

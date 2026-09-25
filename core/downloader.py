@@ -70,6 +70,25 @@ def _ensure_ffmpeg_in_path():
         pass
 
 
+def _find_cookie_file(output_dir: Optional[str] = None) -> Optional[str]:
+    """Tìm kiếm file cookies.txt nếu người dùng đã chuẩn bị sẵn để vượt giới hạn đăng nhập."""
+    candidates = []
+    if output_dir:
+        candidates.append(Path(output_dir) / "cookies.txt")
+    candidates.extend([
+        Path.home() / ".vietsub_ai" / "cookies.txt",
+        Path.cwd() / "cookies.txt",
+        Path(__file__).resolve().parent.parent / "cookies.txt",
+    ])
+    for cpath in candidates:
+        try:
+            if cpath.is_file() and cpath.stat().st_size > 0:
+                return str(cpath)
+        except Exception:
+            pass
+    return None
+
+
 class VideoDownloader:
     def __init__(
         self,
@@ -100,7 +119,7 @@ class VideoDownloader:
             url_clean = clean_extracted
 
         # ── HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) không watermark ──
-        if "douyin.com" in url_clean.lower():
+        if "douyin.com" in url_clean.lower() or "iesdouyin.com" in url_clean.lower():
             try:
                 from core.douyin import DouyinDownloader
                 if DouyinDownloader.is_douyin_url(url_clean):
@@ -116,7 +135,7 @@ class VideoDownloader:
             except Exception as dy_err:
                 if isinstance(dy_err, InterruptedError):
                     raise
-                pass
+                self._report(0.06, f"Bộ nạp Douyin chuyên biệt gặp trở ngại: {dy_err}. Thử qua phương thức dự phòng...")
 
         # ── HỖ TRỢ CHUYÊN BIỆT: Xiaohongshu (小红书 / XHS) ──
         from core.xhs_downloader import XHSDownloader
@@ -166,6 +185,8 @@ class VideoDownloader:
             # Mặc định "best": Lấy chất lượng gốc cao nhất tuyệt đối (4K / 2K / 1080p 60fps, max bitrate)
             format_str = "bestvideo*+bestaudio/bestvideo+bestaudio/best"
 
+        cookie_file = _find_cookie_file(output_dir)
+
         ydl_opts = {
             "format": format_str,
             "merge_output_format": "mp4",
@@ -177,6 +198,13 @@ class VideoDownloader:
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            # Cấu hình chuyên dụng cho từng extractor của yt-dlp:
+            # Instagram: Dùng iOS API client (app_id=124024574287414) để vượt chặn rate-limit & redirect login
+            "extractor_args": {
+                "instagram": {
+                    "app_id": ["ios"],
+                }
+            },
             "http_headers": {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -188,6 +216,9 @@ class VideoDownloader:
                 "Sec-Fetch-Mode": "navigate",
             },
         }
+
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
 
         ffmpeg_bin = get_ffmpeg_path()
         if ffmpeg_bin:
@@ -237,6 +268,15 @@ class VideoDownloader:
                     "Hỗ trợ hiện tại: TikTok, Douyin, YouTube, Facebook, Instagram, Bilibili, Xiaohongshu (công khai).\n"
                     "Bạn có thể tải thủ công rồi dùng 'Chọn File Video Trên Máy'."
                 )
+            elif any(d in url_clean.lower() for d in ("instagram.com", "instagr.am")):
+                if any(k in err_msg.lower() for k in ("login", "rate-limit", "redirect", "empty media", "restricted", "private")):
+                    raise RuntimeError(
+                        "Video Instagram này không thể tải do bị giới hạn truy cập ẩn danh (yêu cầu đăng nhập hoặc bài viết riêng tư).\n"
+                        f"Chi tiết kỹ thuật: {err_msg}\n\n"
+                        "💡 Cách khắc phục:\n"
+                        "1. Đảm bảo bài viết / Reels ở chế độ Công khai (Public).\n"
+                        "2. Nếu là tài khoản riêng tư, bạn có thể xuất file cookies.txt từ trình duyệt và đặt vào ~/.vietsub_ai/cookies.txt để tải bình thường."
+                    )
             raise RuntimeError(f"Không thể tải video từ link: {e}")
 
 
@@ -409,7 +449,7 @@ class VideoDownloader:
         url_clean = url.strip()
 
         # ── 0. HỖ TRỢ CHUYÊN BIỆT: Douyin (TikTok Trung Quốc) ──
-        if "douyin.com" in url_clean.lower():
+        if "douyin.com" in url_clean.lower() or "iesdouyin.com" in url_clean.lower():
             try:
                 from core.douyin import DouyinDownloader
                 if DouyinDownloader.is_douyin_url(url_clean):
@@ -426,7 +466,7 @@ class VideoDownloader:
             except Exception as dy_err:
                 if isinstance(dy_err, InterruptedError):
                     raise
-                pass
+                self._report(0.06, f"Bộ nạp Douyin Audio thông báo: {dy_err}. Thử qua phương thức dự phòng...")
 
         # ── 1. HỖ TRỢ CHUYÊN BIỆT: Epidemic Sound (www.epidemicsound.com) ──
         if "epidemicsound.com" in url_clean.lower() and "audiocdn.epidemicsound.com" not in url_clean:
@@ -615,6 +655,8 @@ class VideoDownloader:
             except Exception:
                 pass
 
+        cookie_file = _find_cookie_file(output_dir)
+
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": str(Path(output_dir) / "%(title).100s.%(ext)s"),
@@ -625,6 +667,11 @@ class VideoDownloader:
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            "extractor_args": {
+                "instagram": {
+                    "app_id": ["ios"],
+                }
+            },
             "postprocessors": postprocessors,
             "http_headers": {
                 "User-Agent": (
@@ -637,6 +684,9 @@ class VideoDownloader:
                 "Sec-Fetch-Mode": "navigate",
             },
         }
+
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
 
         ffmpeg_bin = get_ffmpeg_path()
         if ffmpeg_bin:
@@ -656,6 +706,16 @@ class VideoDownloader:
         except (InterruptedError, KeyboardInterrupt):
             raise InterruptedError("Tiến trình tải đã bị hủy.")
         except Exception as e:
+            err_msg = str(e)
+            if any(d in url_clean.lower() for d in ("instagram.com", "instagr.am")):
+                if any(k in err_msg.lower() for k in ("login", "rate-limit", "redirect", "empty media", "restricted", "private")):
+                    raise RuntimeError(
+                        "Không thể tải âm thanh Instagram do bị giới hạn truy cập ẩn danh (yêu cầu đăng nhập hoặc bài viết riêng tư).\n"
+                        f"Chi tiết kỹ thuật: {err_msg}\n\n"
+                        "💡 Cách khắc phục:\n"
+                        "1. Đảm bảo bài viết / Reels ở chế độ Công khai (Public).\n"
+                        "2. Bạn có thể xuất file cookies.txt từ trình duyệt và đặt vào ~/.vietsub_ai/cookies.txt để tải bình thường."
+                    )
             raise RuntimeError(f"Không thể tải âm thanh từ link: {e}")
 
         # Kiểm tra file với extension đã chuyển đổi

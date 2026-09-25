@@ -24,17 +24,21 @@ hiddenimports = [
     'core.gemini_processor',
 ]
 
-for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs', 'julius', 'lameenc', 'sphn', 'safetensors', 'einops']:
-    pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
-    datas += pkg_datas
-    binaries += pkg_binaries
-    hiddenimports += pkg_hidden
+for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs', 'julius', 'lameenc', 'sphn', 'safetensors', 'einops', 'playwright']:
+    try:
+        pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
+        datas += pkg_datas
+        binaries += pkg_binaries
+        hiddenimports += pkg_hidden
+    except Exception:
+        pass
 
-# Đảm bảo metadata của curl_cffi luôn có mặt để importlib.metadata không bị lỗi
-try:
-    datas += copy_metadata('curl_cffi')
-except Exception:
-    pass
+# Đảm bảo metadata của curl_cffi và playwright luôn có mặt để importlib.metadata không bị lỗi
+for meta_pkg in ['curl_cffi', 'playwright']:
+    try:
+        datas += copy_metadata(meta_pkg)
+    except Exception:
+        pass
 
 # Lọc bỏ các module test và file rác của thư viện để giảm dung lượng
 hiddenimports = [h for h in set(hiddenimports) if not any(t in h for t in ['.tests', '.test_', 'testing', 'tests'])]
