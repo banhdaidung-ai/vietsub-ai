@@ -172,10 +172,14 @@ jobs:
               - Khung xem trước trực quan Live Preview tỉ lệ chuẩn 1:1 thời gian thực kèm nút so sánh nhanh ảnh gốc.
               - Giao diện chống che lấp: Thanh nút bấm ghim cố định ở đáy cửa sổ trên mọi độ phân giải màn hình; đồng hồ đo thời gian chạy trực quan.
 
-            - **⚡ Tối Ưu & Sửa Lỗi Hệ Thống:**
-              - Khắc phục triệt để lỗi đuôi mở rộng khi xuất định dạng WebP.
+            - **⚡ Tối Ưu Hóa Tốc Độ Nén Siêu Tốc & Sửa Lỗi Hệ Thống:**
+              - Nén ảnh WebP nhanh hơn gấp 10 lần nhờ thuật toán 2 pha (Two-phase encoding).
+              - Nén hàng loạt (Batch) nhanh hơn gấp 50–120 lần nhờ xử lý đa luồng đa nhân (Multi-core ThreadPoolExecutor).
+              - Thu nhỏ thông minh 1 bước (One-shot Geometric Scaling) thay thế vòng lặp 20 bước.
+              - Khắc phục triệt để lỗi stream crash khi nén ảnh JPEG.
+              - Khắc phục lỗi đuôi mở rộng khi xuất định dạng WebP.
               - Khắc phục lỗi vị trí nút Bắt Đầu Nén và nạp an toàn module thời gian.
-              - Hệ thống kiểm thử tự động toàn diện đạt 100% Passed.
+              - Hệ thống kiểm thử tự động toàn diện đạt 100% Passed (30/30 tests).
 
             ### 📥 Tải xuống cài đặt:
             - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.

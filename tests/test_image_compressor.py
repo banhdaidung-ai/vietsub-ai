@@ -260,6 +260,58 @@ def test_compress_single_webp_format_generates_valid_webp(sample_image):
             assert out_img.format == "WEBP"
 
 
+def test_compress_single_jpeg_no_stream_crash(sample_image):
+    """Kiểm tra nén JPEG đạt target dung lượng và không bị lỗi stream crash trong Pillow."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        dst_path = str(Path(tmp_dir) / "output.jpg")
+        task = CompressTask(
+            src_path=sample_image,
+            dst_path=dst_path,
+            target_kb=50,
+            compress_enabled=True,
+            output_format="JPEG",
+        )
+        result = _compress_single(task)
+        assert result.success is True
+        assert os.path.exists(result.dst_path)
+        assert result.dst_size_kb <= 60
+        with Image.open(result.dst_path) as out_img:
+            assert out_img.format == "JPEG"
+
+
+def test_batch_engine_multi_core_parallel(sample_image):
+    """Kiểm tra ImageCompressorEngine chạy song song đa luồng thành công và hoàn trả đầy đủ kết quả."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tasks = [
+            CompressTask(
+                src_path=sample_image,
+                dst_path=str(Path(tmp_dir) / f"out_{i}.webp"),
+                target_kb=60,
+                output_format="WEBP",
+            )
+            for i in range(4)
+        ]
+
+        engine = ImageCompressorEngine()
+        import threading
+        done_event = threading.Event()
+        batch_results = []
+        progress_calls = []
+
+        def on_progress(curr, total, res):
+            progress_calls.append((curr, total, res.success))
+
+        def on_done(results):
+            batch_results.extend(results)
+            done_event.set()
+
+        engine.compress_batch(tasks, on_progress, on_done)
+        assert done_event.wait(timeout=10), "Quá trình nén batch đa luồng phải hoàn thành trong 10s"
+        assert len(batch_results) == 4
+        assert len(progress_calls) == 4
+        assert all(r.success for r in batch_results)
+
+
 if __name__ == "__main__":
     import sys
     repo_root = str(Path(__file__).resolve().parent.parent)

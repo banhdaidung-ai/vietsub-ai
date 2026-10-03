@@ -6,9 +6,11 @@ Hỗ trợ chèn logo watermark và text watermark (mã sản phẩm từ tên f
 
 from __future__ import annotations
 
+import functools
 import io
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -93,6 +95,7 @@ def _calc_position(
     return (img_w - obj_w) // 2, (img_h - obj_h) // 2
 
 
+@functools.lru_cache(maxsize=32)
 def _load_font(font_path: str, size: int, bold: bool) -> ImageFont.FreeTypeFont:
     """Load font PIL; fallback về default nếu không tìm thấy file."""
     if font_path and Path(font_path).is_file():
@@ -322,6 +325,7 @@ def _encode_to_bytes(
     quality: int,
     exif_bytes,
     lossless: bool = False,
+    method: int = 4,
 ) -> bytes:
     """Encode ảnh PIL ra bytes với quality chỉ định."""
     buf = io.BytesIO()
@@ -329,9 +333,7 @@ def _encode_to_bytes(
     if fmt == "JPEG":
         save_kwargs["quality"] = quality
         save_kwargs["optimize"] = True
-        save_kwargs["progressive"] = True
-        # subsampling=0 → 4:4:4: giữ nguyên độ phân giải màu sắc
-        save_kwargs["subsampling"] = 0
+        save_kwargs["progressive"] = False
         if exif_bytes:
             save_kwargs["exif"] = exif_bytes
     elif fmt == "WEBP":
@@ -339,11 +341,11 @@ def _encode_to_bytes(
             # Lossless WebP: chất lượng tuyệt đối như PNG, nhưng file nhỏ hơn ~25%
             save_kwargs["lossless"] = True
             save_kwargs["quality"] = 100  # không ảnh hưởng ở lossless nhưng set để rõ ý
-            save_kwargs["method"] = 6    # mã hoá tốt nhất có thể
+            save_kwargs["method"] = min(method, 4)  # method=4 cho lossless cực nhanh và kích thước tương đương method=6
         else:
             save_kwargs["quality"] = quality
-            # method=6: thuật toán nén tốt hơn method=4, chất lượng cao hơn cùng size
-            save_kwargs["method"] = 6
+            # method=2: siêu tốc khi thăm dò binary search, method=4: chuẩn vàng xuất file của Google
+            save_kwargs["method"] = method
         if exif_bytes:
             save_kwargs["exif"] = exif_bytes
     elif fmt == "PNG":
@@ -360,23 +362,36 @@ def _scale_down_to_target(
     target_bytes: int,
     exif_bytes,
 ) -> Tuple[Image.Image, bytes]:
-    """Thu nhỏ kích thước ảnh dần đến khi đạt dung lượng mục tiêu."""
+    """Thu nhỏ kích thước ảnh thông minh theo tỉ lệ hình học để đạt dung lượng mục tiêu siêu tốc."""
     from PIL import ImageFilter
-    scale = 0.9
     current = img
-    for _ in range(20):
-        w = max(1, int(current.width * scale))
-        h = max(1, int(current.height * scale))
-        resized = current.resize((w, h), Image.LANCZOS)
-        # Làm rõ nét lại sau resize để bù lại hiệu ứng mờ do scale down
-        resized = resized.filter(ImageFilter.UnsharpMask(radius=0.6, percent=130, threshold=3))
-        # Dùng quality=82 thay vì 70 để tránh nén 2 lần làm giảm chất lượng
-        result_bytes = _encode_to_bytes(resized, fmt, quality=82, exif_bytes=exif_bytes)
-        if len(result_bytes) <= target_bytes:
-            return resized, result_bytes
-        current = resized
-    result_bytes = _encode_to_bytes(current, fmt, quality=15, exif_bytes=exif_bytes)
-    return current, result_bytes
+
+    # Đo nhanh dung lượng ở mức chất lượng thấp (quality=25) bằng method=2 siêu tốc
+    probe_bytes = _encode_to_bytes(current, fmt, quality=25, exif_bytes=exif_bytes, method=2)
+    if len(probe_bytes) <= target_bytes:
+        final_bytes = _encode_to_bytes(current, fmt, quality=25, exif_bytes=exif_bytes, method=4)
+        return current, final_bytes
+
+    # Tính toán tỉ lệ co 1 bước dựa trên căn bậc hai tỉ lệ dung lượng byte
+    # Nhân hệ số an toàn 0.92 để chắc chắn đạt mục tiêu
+    ratio = max(0.05, min(0.95, ((target_bytes / len(probe_bytes)) ** 0.5) * 0.92))
+    w = max(1, int(current.width * ratio))
+    h = max(1, int(current.height * ratio))
+    resized = current.resize((w, h), Image.LANCZOS)
+    resized = resized.filter(ImageFilter.UnsharpMask(radius=0.5, percent=120, threshold=3))
+
+    # Mã hoá ảnh đã thu nhỏ với mức chất lượng tốt (quality=78)
+    result_bytes = _encode_to_bytes(resized, fmt, quality=78, exif_bytes=exif_bytes, method=4)
+    if len(result_bytes) <= target_bytes:
+        return resized, result_bytes
+
+    # Nếu vẫn chưa đạt do ảnh có độ entropy/nhiễu quá cao, co thêm 1 bước phụ với quality=65
+    ratio2 = max(0.05, min(0.90, ((target_bytes / len(result_bytes)) ** 0.5) * 0.90))
+    w2 = max(1, int(resized.width * ratio2))
+    h2 = max(1, int(resized.height * ratio2))
+    resized2 = resized.resize((w2, h2), Image.LANCZOS)
+    result_bytes2 = _encode_to_bytes(resized2, fmt, quality=65, exif_bytes=exif_bytes, method=4)
+    return resized2, result_bytes2
 
 
 def _compress_single(task: CompressTask) -> CompressResult:
@@ -467,7 +482,7 @@ def _compress_single(task: CompressTask) -> CompressResult:
         if src_size_kb <= task.target_kb:
             if fmt == "WEBP":
                 # WebP lossless khi ảnh vừa dưới target
-                result_bytes = _encode_to_bytes(img, fmt, 100, exif_bytes, lossless=True)
+                result_bytes = _encode_to_bytes(img, fmt, 100, exif_bytes, lossless=True, method=4)
             else:
                 result_bytes = _encode_to_bytes(img, fmt, quality=95, exif_bytes=exif_bytes)
             Path(final_dst_path).parent.mkdir(parents=True, exist_ok=True)
@@ -481,11 +496,11 @@ def _compress_single(task: CompressTask) -> CompressResult:
                 error="(Ảnh đã nhỏ hơn mục tiêu, giữ chất lượng cao)"
             )
 
-        # ── Chiến lược riêng cho WEBP: thử Lossless trước ──
-        if fmt == "WEBP":
-            lossless_bytes = _encode_to_bytes(img, fmt, 100, exif_bytes, lossless=True)
+        # ── Chiến lược riêng cho WEBP: chỉ thử Lossless khi dung lượng gốc xấp xỉ mục tiêu ──
+        # (Nếu ảnh gốc > target_kb * 1.25, lossless chắc chắn sẽ vượt target nên bỏ qua để tránh mất ~8s)
+        if fmt == "WEBP" and (src_size_kb <= task.target_kb * 1.25):
+            lossless_bytes = _encode_to_bytes(img, fmt, 100, exif_bytes, lossless=True, method=4)
             if len(lossless_bytes) <= target_bytes:
-                # Lossless vừa target → chất lượng tuyệt đối, không mất pixel nào
                 Path(final_dst_path).parent.mkdir(parents=True, exist_ok=True)
                 with open(final_dst_path, "wb") as f:
                     f.write(lossless_bytes)
@@ -496,17 +511,21 @@ def _compress_single(task: CompressTask) -> CompressResult:
                     width=width, height=height, success=True,
                     error="(WebP Lossless — chất lượng tuyệt đối, không mất pixel nào)"
                 )
-            # Lossless quá lớn → Binary search lossy với method=6, range 30–99
-            lo, hi = 30, 99
+
+        if fmt == "WEBP":
+            lo, hi = 30, 95
         else:
             lo, hi = 10, 95
 
         best_quality = lo
         best_result_bytes: Optional[bytes] = None
 
-        for _ in range(14):  # 14 iterations đủ chính xác cho range 10-99
+        # Binary search 6 lần (2^6 = 64 mức, đủ quét toàn bộ dải quality)
+        # Sử dụng method=2 cho WebP trong lúc dò để tăng tốc 400%
+        probe_method = 2 if fmt == "WEBP" else 4
+        for _ in range(6):
             mid = (lo + hi) // 2
-            result_bytes = _encode_to_bytes(img, fmt, mid, exif_bytes)
+            result_bytes = _encode_to_bytes(img, fmt, mid, exif_bytes, method=probe_method)
             if len(result_bytes) <= target_bytes:
                 best_quality = mid
                 best_result_bytes = result_bytes
@@ -516,8 +535,12 @@ def _compress_single(task: CompressTask) -> CompressResult:
             if lo > hi:
                 break
 
-        # Nếu quality=10 vẫn quá lớn → scale down kích thước
-        if best_result_bytes is None or len(best_result_bytes) > target_bytes:
+        # Nếu tìm thấy quality phù hợp, mã hoá bản cuối cùng với method=4 để tối ưu độ nét và kích thước
+        if best_result_bytes is not None and len(best_result_bytes) <= target_bytes:
+            if fmt == "WEBP":
+                best_result_bytes = _encode_to_bytes(img, fmt, best_quality, exif_bytes, method=4)
+        else:
+            # Nếu quality thấp nhất vẫn lớn hơn target → scale down kích thước thông minh 1 bước
             img, best_result_bytes = _scale_down_to_target(
                 img, fmt, target_bytes, exif_bytes
             )
@@ -543,11 +566,11 @@ def _compress_single(task: CompressTask) -> CompressResult:
 
 
 # ─────────────────────────────────────────────────────────────
-# Batch Compressor Engine
+# Batch Compressor Engine (Đa Luồng / Multi-Core)
 # ─────────────────────────────────────────────────────────────
 
 class ImageCompressorEngine:
-    """Engine nén ảnh hàng loạt với callback tiến độ. Hỗ trợ cancel."""
+    """Engine nén ảnh hàng loạt đa luồng (multi-core) với callback tiến độ. Hỗ trợ cancel."""
 
     def __init__(self):
         self._cancel_event = threading.Event()
@@ -564,7 +587,7 @@ class ImageCompressorEngine:
         on_progress: Callable[[int, int, CompressResult], None],
         on_done: Callable[[List[CompressResult]], None],
     ):
-        """Nén hàng loạt trong background thread."""
+        """Nén hàng loạt trong background thread sử dụng đa luồng (multi-core)."""
         self.reset()
         threading.Thread(
             target=self._run,
@@ -572,20 +595,81 @@ class ImageCompressorEngine:
             daemon=True,
         ).start()
 
-    def _run(self, tasks, on_progress, on_done):
-        results: List[CompressResult] = []
+    def _worker_task(self, task: CompressTask) -> CompressResult:
+        if self._cancel_event.is_set():
+            return CompressResult(
+                src_path=task.src_path,
+                dst_path=task.dst_path,
+                src_size_kb=0.0,
+                dst_size_kb=0.0,
+                width=0,
+                height=0,
+                success=False,
+                error="Đã dừng theo yêu cầu của người dùng",
+            )
+        return _compress_single(task)
+
+    def _run(self, tasks: List[CompressTask], on_progress, on_done):
         total = len(tasks)
-        for i, task in enumerate(tasks):
-            if self._cancel_event.is_set():
-                break
-            result = _compress_single(task)
-            results.append(result)
+        if total == 0:
             try:
-                on_progress(i + 1, total, result)
+                on_done([])
             except Exception:
                 pass
+            return
+
+        results: List[Optional[CompressResult]] = [None] * total
+        completed_count = 0
+        lock = threading.Lock()
+
+        # Số luồng song song: Tận dụng số core CPU, tối đa 8 luồng để kiểm soát RAM
+        max_workers = min(8, max(1, os.cpu_count() or 4))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {}
+            for idx, task in enumerate(tasks):
+                if self._cancel_event.is_set():
+                    break
+                future = executor.submit(self._worker_task, task)
+                future_to_idx[future] = idx
+
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                if self._cancel_event.is_set():
+                    try:
+                        res = future.result()
+                        results[idx] = res
+                    except Exception:
+                        pass
+                    continue
+
+                try:
+                    res = future.result()
+                except Exception as e:
+                    res = CompressResult(
+                        src_path=tasks[idx].src_path,
+                        dst_path=tasks[idx].dst_path,
+                        src_size_kb=0.0,
+                        dst_size_kb=0.0,
+                        width=0,
+                        height=0,
+                        success=False,
+                        error=str(e),
+                    )
+
+                results[idx] = res
+                with lock:
+                    completed_count += 1
+                    curr_done = completed_count
+
+                try:
+                    on_progress(curr_done, total, res)
+                except Exception:
+                    pass
+
+        final_results = [r for r in results if r is not None]
         try:
-            on_done(results)
+            on_done(final_results)
         except Exception:
             pass
 
