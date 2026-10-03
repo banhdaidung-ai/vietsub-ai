@@ -145,34 +145,37 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.2.0' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.2.0 — Tích Hợp Tab Hướng Dẫn Sử Dụng & Tối Ưu Giao Diện' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.3.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.0 — Trang Chủ Mới, GDrive Downloader & Nén Ảnh Thông Minh' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.2.0 — Tích Hợp Tab Hướng Dẫn Sử Dụng (Landing Page) & Tối Ưu Giao Diện
+            ## 🎉 Bản Phát Hành Vietsub AI v1.3.0 — Trang Chủ Mới, GDrive Downloader Trực Tiếp & Nén Ảnh Hàng Loạt Chuẩn WebP
 
-            Phiên bản v1.2.0 mang đến các cải tiến trải nghiệm người dùng vượt bậc:
+            Phiên bản v1.3.0 mang đến các cải tiến đột phá về tính năng và trải nghiệm người dùng:
 
-            - **📖 Bổ Sung Tab Hướng Dẫn Sử Dụng Đẳng Cấp (Landing Page):**
-              - Tích hợp trang Landing Page giới thiệu toàn bộ tính năng và hướng dẫn chi tiết ngay trong ứng dụng.
-              - Bao gồm: Tổng quan quy trình 4 bước, chi tiết 6 phân hệ cốt lõi, bảng tra cứu nhanh theo nhu cầu (Cheat Sheet Matrix), bí kíp sử dụng Pro & phím tắt, giải đáp thắc mắc thường gặp (FAQ).
-              - Tối ưu cuộn chuột siêu mượt và siêu nhạy cho cả chuột con lăn rời và trackpad trên macOS và Windows.
-            - **🎬 Cơ Chế Chuyển Đổi Tab Studio & Hướng Dẫn An Toàn 100% (Zero-Regression):**
-              - Bố trí thanh chuyển tab 2 tầng chuyên nghiệp trên Header Card, không bị che khuất ở bất kỳ kích thước màn hình nào.
-              - Giữ nguyên vẹn 100% tiến trình, log và trạng thái công việc khi chuyển qua lại giữa các tab.
-              - Hỗ trợ kéo thả video tự động chuyển về Tab Studio để làm việc ngay lập tức.
-            - **🛡️ Khắc Phục Triệt Để Hiện Tượng Cửa Sổ Console Giật/Nháy Liên Tục Trên Windows:**
-              - Tích hợp 2 tầng bảo vệ tiến trình ngầm (`CREATE_NO_WINDOW` & `STARTUPINFO(SW_HIDE)`), triệt tiêu hoàn toàn việc bật/nháy cửa sổ đen Command Prompt khi FFmpeg/FFprobe chạy trong suốt quá trình lồng tiếng (TTS), đo thời lượng, co giãn tốc độ (atempo), ghép nối (amix) và chuẩn hóa âm học (loudnorm).
-            - **🎙️ Khóa Cố Định 1 Giọng Đọc & Tự Động Đồng Bộ Phụ Đề Chuẩn Khớp 1:1:**
-              - Duy trì ổn định 100% giọng đọc Microsoft Edge Neural đã chọn với cơ chế tự động thử lại khi gián đoạn mạng.
-              - Thuật toán Ripple Scheduling & Non-Colliding Scheduler tự động đồng bộ phụ đề chữ khớp chính xác 100% theo nhịp giọng đọc AI thực tế, bảo vệ câu cuối không bao giờ bị cắt cụt.
-            - **✨ Tối Ưu Bảng Log Trạng Thái & Tự Hồi Phục Kết Nối Âm Thầm (Silent Self-Healing):**
-              - Loại bỏ hoàn toàn các dòng cảnh báo ngắt kết nối/thử lại tạm thời trên bảng Log gây hoang mang tâm lý người dùng.
-              - Hệ thống tự động kiên trì kết nối lại âm thầm trong nền (Silent Retry); bảng Log chỉ tập trung hiển thị các mốc tiến trình tích cực, rõ ràng và các thông báo trạng thái thành công hoàn hảo.
-            - **📸 Hỗ Trợ Tải Instagram Reels / Video Ổn Định Tuyệt Đối:**
-              - Vượt qua cơ chế giới hạn rate-limit và redirect đăng nhập của Instagram bằng iOS Mobile API client chuyên dụng (`app_id=124024574287414`).
-              - Tự động nhận diện và nạp `cookies.txt` (nếu có trong `~/.vietsub_ai/cookies.txt`) để tải các nội dung giới hạn riêng tư.
-            - **⚡ Hiệu Năng & Ổn Định:**
-              - Tích hợp FFmpeg 7.1, Demucs AI và pipeline render video mượt mà, không gián đoạn.
+            - **🏠 Trang Chủ Mới (Home Dashboard) Hiện Đại & Toàn Diện:**
+              - Thiết kế Landing Home phong cách Apple macOS Sequoia Dark Mode sang trọng, trực quan.
+              - Thẻ truy cập nhanh (Quick Actions): Tạo phụ đề & dịch tự động, Tách beat & vocal, Tải video (YouTube/Douyin/Instagram/Artlist), Tải Google Drive không zip, Nén & đóng dấu ảnh.
+              - Sidebar Tiện ích hệ thống: Theo dõi tài nguyên, cấu hình nhanh, lối tắt mở thư mục xuất file.
+
+            - **☁️ Bộ Tải Google Drive Chuyên Nghiệp (GDrive Downloader):**
+              - Tải trực tiếp toàn bộ thư mục (folder) hoặc tệp đơn từ Google Drive mà **không cần nén zip**.
+              - Bảo toàn 100% cấu trúc cây thư mục phân cấp gốc.
+              - Hỗ trợ cả link công khai và tài khoản cá nhân / Google Workspace qua OAuth 2.0 & API Key an toàn.
+              - Cơ chế tự động tiếp tục khi gián đoạn mạng, kháng rate-limit.
+
+            - **🖼️ Phân Hệ Nén Ảnh & Đóng Dấu Watermark Thông Minh (Image Compressor):**
+              - Thuật toán nén thích ứng nhị phân (Binary Search Quality) kết hợp Unsharp Mask Resizing, bảo toàn độ sắc nét tối đa.
+              - Hỗ trợ xuất chuẩn **WebP** hiện đại (Lossless và Lossy tối ưu cho website & SEO), **JPEG**, **PNG**.
+              - Đóng dấu Watermark chuyên nghiệp:
+                - **Logo:** PNG trong suốt, tùy chỉnh kích thước, độ mờ (opacity), neo vị trí và offset vi chỉnh tọa độ (X/Y).
+                - **Text (Mã sản phẩm):** Tự động nhận diện từ tên file ảnh hoặc nhập thủ công, tùy chỉnh màu sắc (mặc định đen cao cấp), viền nền hộp (box), bóng đổ (shadow).
+              - Khung xem trước trực quan Live Preview tỉ lệ chuẩn 1:1 thời gian thực kèm nút so sánh nhanh ảnh gốc.
+              - Giao diện chống che lấp: Thanh nút bấm ghim cố định ở đáy cửa sổ trên mọi độ phân giải màn hình; đồng hồ đo thời gian chạy trực quan.
+
+            - **⚡ Tối Ưu & Sửa Lỗi Hệ Thống:**
+              - Khắc phục triệt để lỗi đuôi mở rộng khi xuất định dạng WebP.
+              - Khắc phục lỗi vị trí nút Bắt Đầu Nén và nạp an toàn module thời gian.
+              - Hệ thống kiểm thử tự động toàn diện đạt 100% Passed.
 
             ### 📥 Tải xuống cài đặt:
             - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.
