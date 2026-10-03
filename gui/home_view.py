@@ -49,6 +49,7 @@ class HomeView(ctk.CTkScrollableFrame):
         on_navigate: Optional[Callable[[str], None]] = None,
         on_open_folder: Optional[Callable] = None,
         on_open_settings: Optional[Callable] = None,
+        on_donate: Optional[Callable] = None,
         **kwargs,
     ):
         super().__init__(
@@ -60,6 +61,7 @@ class HomeView(ctk.CTkScrollableFrame):
         self.on_navigate = on_navigate
         self.on_open_folder = on_open_folder
         self.on_open_settings = on_open_settings
+        self.on_donate = on_donate
 
         self.grid_columnconfigure(0, weight=1)
 
@@ -138,7 +140,7 @@ class HomeView(ctk.CTkScrollableFrame):
         p1 = ctk.CTkFrame(pills_bar, fg_color=BG_INSET, corner_radius=8,
                            border_width=1, border_color=BORDER_INSET)
         p1.pack(side="left", padx=4)
-        ctk.CTkLabel(p1, text="🤖 Gemini 2.5 Flash", font=("Arial", 11, "bold"),
+        ctk.CTkLabel(p1, text="⚡ Gemini 3.8 Flash", font=("Arial", 11, "bold"),
                      text_color=APPLE_CYAN, padx=10, pady=4).pack()
 
         # Pill 2: Demucs Vocal Separator
@@ -169,6 +171,23 @@ class HomeView(ctk.CTkScrollableFrame):
                 height=28,
                 corner_radius=8,
                 command=self.on_open_folder,
+            ).pack(side="left", padx=4)
+
+        # Pill 5: Mời tác giả cà phê (Donate)
+        if self.on_donate:
+            ctk.CTkButton(
+                pills_bar,
+                text="☕ Mời Tác Giả Cà Phê",
+                font=("Arial", 11, "bold"),
+                fg_color="#2B2115",
+                hover_color="#45341F",
+                text_color="#FFB340",
+                border_width=1,
+                border_color="#5E4324",
+                height=28,
+                corner_radius=8,
+                cursor="pointinghand",
+                command=self.on_donate,
             ).pack(side="left", padx=4)
 
     # ═════════════════════════════════════════════════════════
@@ -224,12 +243,23 @@ class HomeView(ctk.CTkScrollableFrame):
                 "id": "downloader",
                 "icon": "📥",
                 "title": "Tải Video & Nhạc Online",
-                "tag": "ĐA NỀN TẢNG",
+                "tag": "MẠNG XÃ HỘI",
                 "tag_color": APPLE_GREEN,
-                "desc": "Tải video gốc siêu nét không logo hoặc trích xuất MP3 320kbps từ TikTok, Douyin, YouTube, Facebook, SoundCloud, Google Drive...",
+                "desc": "Tải video gốc siêu nét không logo hoặc trích xuất MP3 320kbps từ TikTok, Douyin, YouTube, Facebook, Instagram, SoundCloud, Artlist...",
                 "btn_text": "Tải Media Ngay ➔",
                 "btn_color": APPLE_GREEN,
                 "btn_hover": APPLE_GREEN_HOVER,
+            },
+            {
+                "id": "gdrive",
+                "icon": "☁️",
+                "title": "Tải Google Drive Trực Tiếp",
+                "tag": "KHÔNG CẦN ZIP",
+                "tag_color": APPLE_CYAN,
+                "desc": "Tải trực tiếp toàn bộ thư mục phân cấp hoặc tệp đơn từ Google Drive tốc độ cao, bảo toàn 100% cấu trúc tệp mà không cần nén ZIP.",
+                "btn_text": "Mở Tải Google Drive ➔",
+                "btn_color": "#1E3A8A",
+                "btn_hover": APPLE_BLUE,
             },
             {
                 "id": "compressor",

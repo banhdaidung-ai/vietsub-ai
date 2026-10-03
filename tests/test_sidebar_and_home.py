@@ -30,8 +30,9 @@ def test_home_view_standalone():
     home._handle_click("vietsub")
     home._handle_click("compressor")
     home._handle_click("separator")
+    home._handle_click("gdrive")
 
-    assert clicked_ids == ["vietsub", "compressor", "separator"]
+    assert clicked_ids == ["vietsub", "compressor", "separator", "gdrive"]
 
     root.destroy()
 
@@ -49,7 +50,7 @@ def test_app_window_sidebar_and_canvas():
     assert hasattr(app, "guide_view"), "Phải có guide_view"
 
     # Kiểm tra các nút trong Sidebar
-    expected_keys = {"home", "vietsub", "separator", "downloader", "compressor", "sub_editor", "guide"}
+    expected_keys = {"home", "vietsub", "separator", "downloader", "gdrive", "compressor", "sub_editor", "guide"}
     assert set(app._sidebar_buttons.keys()) == expected_keys
 
     # Mặc định khởi động vào Trang Chủ
@@ -66,6 +67,12 @@ def test_app_window_sidebar_and_canvas():
     assert app._current_canvas_view == "vietsub"
     assert app._active_sidebar_key == "downloader"
     assert "Link Online" in app.tabview.get()
+
+    # Kiểm tra bấm nút gdrive từ sidebar
+    gdrive_clicked = []
+    app._on_gdrive_download_clicked = lambda: gdrive_clicked.append(True)
+    app._on_sidebar_select("gdrive")
+    assert len(gdrive_clicked) == 1
 
     # Chuyển sang Hướng Dẫn
     app._on_sidebar_select("guide")

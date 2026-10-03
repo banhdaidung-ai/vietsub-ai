@@ -343,7 +343,7 @@ class GuideView(ctk.CTkScrollableFrame):
                     ("5 Mẫu Preset Điện Ảnh:", "Vàng Viền Đen Nổi Bật (Viral TikTok), Trắng Tối Giản (Cinema), Hộp Đen (Boxed), Xanh Neon Gradient, Chữ To Nền Mờ."),
                     ("Tùy Biến Typography:", "Chỉnh phông chữ (Arial, Roboto, Montserrat...), kích cỡ chữ, màu sắc, độ dày viền nét (stroke), canh lề vị trí (Bottom, Center, Top)."),
                     ("Tự Động Kiểm Tra FFmpeg:", "Tích hợp công cụ chẩn đoán FFmpeg. Nếu máy chưa cài, bạn có thể tải và cài đặt tự động chỉ với 1-click."),
-                    ("Quản Lý API Key Gemini:", "Nhập Key cá nhân để không bị nghẽn hạn ngạch, hỗ trợ chuyển đổi giữa Gemini 2.5 Flash và Gemini 2.5 Pro."),
+                    ("Quản Lý API Key Gemini:", "Nhập Key cá nhân để không bị nghẽn hạn ngạch, ưu tiên thế hệ mới nhất Gemini 3.8 Flash, tự động tối ưu tốc độ và độ chuẩn xác."),
                 ],
             ),
         ]

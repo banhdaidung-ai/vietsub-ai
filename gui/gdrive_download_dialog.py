@@ -60,6 +60,153 @@ def _open_folder(path: str) -> None:
         pass
 
 
+# ─────────────────────────────────────────────────────────────
+# Popup thông báo hoàn tất tải Google Drive
+# ─────────────────────────────────────────────────────────────
+
+class GDriveCompletionModal(ctk.CTkToplevel):
+    """Popup thông báo tải Google Drive hoàn tất theo chuẩn giao diện Apple macOS."""
+
+    def __init__(
+        self,
+        parent,
+        success_count: int,
+        total_count: int,
+        skipped_count: int,
+        failed_count: int,
+        out_dir: str,
+        elapsed_str: str = "",
+    ):
+        super().__init__(parent)
+        self.title("Hoàn Tất Tải Google Drive — Vietsub AI")
+        self.geometry("520x420")
+        self.resizable(False, False)
+        self.configure(fg_color=BG_WINDOW)
+
+        self.out_dir = out_dir
+
+        self.transient(parent)
+        self.lift()
+        self.grab_set()
+        self.focus_force()
+        try:
+            self.attributes("-topmost", True)
+            self.after(500, lambda: self.attributes("-topmost", False) if self.winfo_exists() else None)
+        except Exception:
+            pass
+
+        # Căn giữa cửa sổ con so với cửa sổ cha
+        try:
+            self.update_idletasks()
+            px = parent.winfo_rootx() + (parent.winfo_width() - 520) // 2
+            py = parent.winfo_rooty() + (parent.winfo_height() - 420) // 2
+            self.geometry(f"+{max(0, px)}+{max(0, py)}")
+        except Exception:
+            pass
+
+        # ── 1. Header Banner ──
+        hdr_frame = ctk.CTkFrame(self, fg_color="transparent")
+        hdr_frame.pack(fill="x", padx=24, pady=(20, 12))
+
+        ctk.CTkLabel(
+            hdr_frame,
+            text="🎉",
+            font=("Arial", 36),
+        ).pack(side="left", padx=(0, 14))
+
+        title_inner = ctk.CTkFrame(hdr_frame, fg_color="transparent")
+        title_inner.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(
+            title_inner,
+            text="Tải Google Drive Hoàn Tất!",
+            font=("Arial", 18, "bold"),
+            text_color=APPLE_GREEN,
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            title_inner,
+            text="Tất cả các tệp Google Drive đã được lưu về máy an toàn (Không cần ZIP).",
+            font=("Arial", 11),
+            text_color=TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(2, 0))
+
+        # ── 2. Stat Card ──
+        card = ctk.CTkFrame(
+            self,
+            fg_color=BG_CARD,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_CARD,
+        )
+        card.pack(fill="both", expand=True, padx=24, pady=(0, 16))
+
+        time_val = elapsed_str if elapsed_str else "Nhanh chóng"
+        stats = [
+            ("📥 Số tệp thành công:", f"{success_count}/{total_count} tệp", APPLE_GREEN),
+            ("⏭️ Tệp đã có sẵn:", f"{skipped_count} tệp (bỏ qua)", TEXT_MUTED if skipped_count == 0 else APPLE_ORANGE),
+            ("⚠️ Tệp gặp lỗi:", f"{failed_count} tệp", APPLE_RED if failed_count > 0 else APPLE_GREEN),
+            ("⏱️ Thời gian tải:", time_val, TEXT_PRIMARY),
+            ("📁 Thư mục lưu tệp:", out_dir, TEXT_SECONDARY),
+        ]
+
+        for i, (label, val, clr) in enumerate(stats):
+            row = ctk.CTkFrame(card, fg_color="transparent")
+            row.pack(fill="x", padx=16, pady=(10 if i == 0 else 6, 10 if i == len(stats) - 1 else 0))
+
+            ctk.CTkLabel(
+                row,
+                text=label,
+                font=("Arial", 11, "bold"),
+                text_color=TEXT_SECONDARY,
+                width=140,
+                anchor="w",
+            ).pack(side="left")
+
+            lbl_val = ctk.CTkLabel(
+                row,
+                text=val,
+                font=("Arial", 11, "bold" if clr in (APPLE_GREEN, APPLE_RED, APPLE_ORANGE) else "normal"),
+                text_color=clr,
+                anchor="w",
+            )
+            lbl_val.pack(side="left", fill="x", expand=True)
+
+        # ── 3. Footer Buttons ──
+        btn_bar = ctk.CTkFrame(self, fg_color="transparent")
+        btn_bar.pack(fill="x", padx=24, pady=(0, 20))
+
+        ctk.CTkButton(
+            btn_bar,
+            text="📁 Mở Thư Mục Chứa Tệp",
+            font=("Arial", 12, "bold"),
+            fg_color=APPLE_BLUE,
+            hover_color=APPLE_BLUE_HOVER,
+            text_color="#FFFFFF",
+            height=38,
+            corner_radius=8,
+            command=self._on_open_folder,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        ctk.CTkButton(
+            btn_bar,
+            text="✓ Đóng",
+            font=("Arial", 12, "bold"),
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_CARD,
+            height=38,
+            width=100,
+            corner_radius=8,
+            command=self.destroy,
+        ).pack(side="right")
+
+    def _on_open_folder(self):
+        _open_folder(self.out_dir)
+
+
 class GDriveDownloadDialog(ctk.CTkToplevel):
     """
     Hộp thoại tải Google Drive trực tiếp không qua nén ZIP.
@@ -457,7 +604,15 @@ class GDriveDownloadDialog(ctk.CTkToplevel):
             )
 
     def _open_auth_dialog(self):
-        """Mở popup cấu hình đăng nhập / cookie tài khoản Google công ty."""
+        """Mở popup cấu hình đăng nhập / cookie tài khoản Google công ty (Singleton)."""
+        if hasattr(self, "_auth_dialog_instance") and self._auth_dialog_instance and self._auth_dialog_instance.winfo_exists():
+            try:
+                self._auth_dialog_instance.lift()
+                self._auth_dialog_instance.focus_force()
+                return
+            except Exception:
+                pass
+
         def on_changed():
             self._refresh_auth_status()
             if has_valid_cookies():
@@ -465,7 +620,7 @@ class GDriveDownloadDialog(ctk.CTkToplevel):
             else:
                 self._log("ℹ️ Đã xóa phiên làm việc tài khoản Google công ty.")
 
-        GDriveAuthDialog(self, on_auth_changed=on_changed)
+        self._auth_dialog_instance = GDriveAuthDialog(self, on_auth_changed=on_changed)
 
     def _log(self, text: str):
         """Thêm dòng log kèm dấu thời gian vào hộp nhật ký."""
@@ -526,6 +681,7 @@ class GDriveDownloadDialog(ctk.CTkToplevel):
         # Cập nhật trạng thái UI
         self._is_downloading = True
         self._cancel_event.clear()
+        self._start_time = time.time()
         self.btn_start.configure(state="disabled")
         self.btn_cancel.configure(state="normal")
         self.btn_close.configure(state="disabled")
@@ -615,6 +771,22 @@ class GDriveDownloadDialog(ctk.CTkToplevel):
                             text=f"🎉 Hoàn tất! Đã tải {s}/{t} tệp (Bỏ qua: {sk})",
                             text_color=APPLE_GREEN,
                         )
+                        elapsed = time.time() - getattr(self, "_start_time", time.time())
+                        mins = int(elapsed // 60)
+                        secs = int(elapsed % 60)
+                        elapsed_str = f"{mins:02d}:{secs:02d}" if mins > 0 else f"{secs}s"
+                        try:
+                            GDriveCompletionModal(
+                                parent=self,
+                                success_count=s,
+                                total_count=t,
+                                skipped_count=sk,
+                                failed_count=f,
+                                out_dir=self.target_dir,
+                                elapsed_str=elapsed_str,
+                            )
+                        except Exception:
+                            pass
 
                 elif status == "fatal_error":
                     self._is_downloading = False

@@ -29,6 +29,7 @@ hiddenimports = [
     'core.gdrive_auth',
     'gui.gdrive_download_dialog',
     'gui.gdrive_auth_dialog',
+    'gui.donate_dialog',
 ]
 
 for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs', 'julius', 'lameenc', 'sphn', 'safetensors', 'einops', 'playwright']:

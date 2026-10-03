@@ -255,3 +255,115 @@ def test_company_restricted_folder_error():
             )
             assert len(stats["errors"]) > 0
             assert "THƯ MỤC NỘI BỘ CÔNG TY" in stats["errors"][0]
+
+
+def test_gdrive_modals_ui():
+    """Kiểm tra khởi tạo thành công 2 modal thông báo Google Drive: Completion & Auth Success."""
+    import customtkinter as ctk
+    from gui.gdrive_download_dialog import GDriveCompletionModal
+    from gui.gdrive_auth_dialog import GDriveAuthSuccessModal
+
+    root = ctk.CTk()
+    root.withdraw()
+
+    # 1. Test GDriveCompletionModal
+    modal_comp = GDriveCompletionModal(
+        root,
+        success_count=5,
+        total_count=7,
+        skipped_count=2,
+        failed_count=0,
+        out_dir="/tmp/fake_dir",
+        elapsed_str="12.5s",
+    )
+    assert modal_comp is not None
+    assert modal_comp.out_dir == "/tmp/fake_dir"
+    modal_comp.destroy()
+
+    # 2. Test GDriveAuthSuccessModal
+    closed = []
+    modal_auth = GDriveAuthSuccessModal(
+        root,
+        on_confirm=lambda: closed.append(True),
+    )
+    assert modal_auth is not None
+    root.destroy()
+
+
+def test_browser_login_pages_detection_and_singleton():
+    """Kiểm tra nhận diện tab Drive trong đa trang (context.pages) và cơ chế Singleton."""
+    from core.gdrive_auth import is_browser_login_running, login_google_via_browser
+    from unittest.mock import MagicMock, patch
+
+    # 1. Test check running status
+    assert not is_browser_login_running()
+
+    # 2. Test Playwright multi-page detection logic
+    mock_page1 = MagicMock()
+    mock_page1.url = "https://accounts.google.com/signin/v2/challenge/pwd"
+
+    mock_page2 = MagicMock()
+    mock_page2.url = "https://drive.google.com/drive/home"
+
+    mock_ctx = MagicMock()
+    mock_ctx.pages = [mock_page1, mock_page2]
+    mock_ctx.cookies.return_value = [
+        {"name": "OSID", "value": "secret_osid_cookie_123456", "domain": "drive.google.com"},
+        {"name": "SID", "value": "secret_sid_cookie_123456", "domain": ".google.com"},
+    ]
+
+    mock_browser = MagicMock()
+    mock_browser.new_context.return_value = mock_ctx
+    mock_ctx.new_page.return_value = mock_page1
+
+    mock_p = MagicMock()
+    mock_p.chromium.launch.return_value = mock_browser
+
+    mock_sync_pw = MagicMock()
+    mock_sync_pw.return_value.__enter__.return_value = mock_p
+
+    success_called = []
+    error_called = []
+
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=mock_sync_pw)}):
+        with patch("core.gdrive_auth.has_valid_cookies", return_value=True):
+            with patch("core.gdrive_auth.cookies_dict_to_netscape", return_value=True):
+                login_google_via_browser(
+                    on_status=None,
+                    on_success=lambda email: success_called.append(email),
+                    on_error=lambda err: error_called.append(err),
+                )
+
+    assert len(success_called) == 1
+    assert len(error_called) == 0
+    assert not is_browser_login_running()
+
+
+def test_cookies_dict_to_netscape_with_none_expires(tmp_path):
+    """Kiểm tra cookies_dict_to_netscape xử lý an toàn tuyệt đối khi expires là None, float, âm hoặc rỗng."""
+    from core.gdrive_auth import cookies_dict_to_netscape, has_valid_cookies
+
+    test_cookies = [
+        {"name": "OSID", "value": "test_osid_val_1234567890", "domain": "drive.google.com", "expires": None},
+        {"name": "SID", "value": "test_sid_val_1234567890", "domain": ".google.com", "expires": -1},
+        {"name": "COMPASS", "value": "test_compass_val_1234567890", "domain": "drive.google.com", "expires": 1899999999.5},
+        {"name": "SSID", "value": "test_ssid_val_1234567890", "domain": ".google.com", "expires": "1999999999"},
+    ]
+
+    target = tmp_path / "test_cookies.txt"
+    res = cookies_dict_to_netscape(test_cookies, target)
+    assert res is True
+    assert target.exists()
+
+    content = target.read_text(encoding="utf-8")
+    assert "OSID" in content
+    assert "SID" in content
+    assert "COMPASS" in content
+    assert "SSID" in content
+
+    # Kiểm tra has_valid_cookies nhận diện được file vừa tạo
+    with patch("core.gdrive_auth.get_cookies_path", return_value=str(target)):
+        assert has_valid_cookies() is True
+
+
+

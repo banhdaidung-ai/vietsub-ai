@@ -148,38 +148,34 @@ jobs:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.3.0' }}
           name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.0 — Trang Chủ Mới, GDrive Downloader & Nén Ảnh Thông Minh' }}
           body: |
-            ## 🎉 Bản Phát Hành Vietsub AI v1.3.0 — Trang Chủ Mới, GDrive Downloader Trực Tiếp & Nén Ảnh Hàng Loạt Chuẩn WebP
+            ## 🎉 Bản Phát Hành Vietsub AI v1.3.0 — Trang Chủ Mới, GDrive Downloader, Nén Ảnh Thông Minh & Donate QR
 
             Phiên bản v1.3.0 mang đến các cải tiến đột phá về tính năng và trải nghiệm người dùng:
+
+            - **☕ Tính Năng Mời Tác Giả Cà Phê (Donate Qua Mã QR):**
+              - Tích hợp huy hiệu `☕ Mời Tác Giả Cà Phê` sang trọng trên Banner Trang Chủ.
+              - Hộp thoại Donate chuẩn phong cách Apple macOS Dark Glassmorphism.
+              - Hiển thị mã QR ngân hàng VIB (0982333097 - BÀNH ĐẠI DŨNG), nút sao chép STK một chạm và lưu ảnh QR về máy.
+
+            - **⚡ Đồng Bộ Mô Hình AI Mới Nhất — Gemini 3.8 Flash:**
+              - Nâng cấp nhận diện và đồng bộ giao diện Trang chủ & Cẩm nang sang Gemini 3.8 Flash (tốc độ cực nhanh, dịch thuật ngữ cảnh tự nhiên).
+
+            - **☁️ Hoàn Thiện Bộ Tải Google Drive & Luồng Đăng Nhập:**
+              - Tải trực tiếp toàn bộ thư mục (folder) hoặc tệp đơn từ Google Drive mà **không cần nén zip**, bảo toàn 100% cấu trúc thư mục.
+              - Khắc phục triệt để luồng đăng nhập Google: xử lý an toàn session cookies, tự động đóng trình duyệt ngay khi đăng nhập xong.
+              - Cơ chế Singleton & Thread Lock chống mở nhiều cửa sổ đăng nhập trùng lặp.
 
             - **🏠 Trang Chủ Mới (Home Dashboard) Hiện Đại & Toàn Diện:**
               - Thiết kế Landing Home phong cách Apple macOS Sequoia Dark Mode sang trọng, trực quan.
               - Thẻ truy cập nhanh (Quick Actions): Tạo phụ đề & dịch tự động, Tách beat & vocal, Tải video (YouTube/Douyin/Instagram/Artlist), Tải Google Drive không zip, Nén & đóng dấu ảnh.
               - Sidebar Tiện ích hệ thống: Theo dõi tài nguyên, cấu hình nhanh, lối tắt mở thư mục xuất file.
 
-            - **☁️ Bộ Tải Google Drive Chuyên Nghiệp (GDrive Downloader):**
-              - Tải trực tiếp toàn bộ thư mục (folder) hoặc tệp đơn từ Google Drive mà **không cần nén zip**.
-              - Bảo toàn 100% cấu trúc cây thư mục phân cấp gốc.
-              - Hỗ trợ cả link công khai và tài khoản cá nhân / Google Workspace qua OAuth 2.0 & API Key an toàn.
-              - Cơ chế tự động tiếp tục khi gián đoạn mạng, kháng rate-limit.
-
             - **🖼️ Phân Hệ Nén Ảnh & Đóng Dấu Watermark Thông Minh (Image Compressor):**
               - Thuật toán nén thích ứng nhị phân (Binary Search Quality) kết hợp Unsharp Mask Resizing, bảo toàn độ sắc nét tối đa.
               - Hỗ trợ xuất chuẩn **WebP** hiện đại (Lossless và Lossy tối ưu cho website & SEO), **JPEG**, **PNG**.
-              - Đóng dấu Watermark chuyên nghiệp:
-                - **Logo:** PNG trong suốt, tùy chỉnh kích thước, độ mờ (opacity), neo vị trí và offset vi chỉnh tọa độ (X/Y).
-                - **Text (Mã sản phẩm):** Tự động nhận diện từ tên file ảnh hoặc nhập thủ công, tùy chỉnh màu sắc (mặc định đen cao cấp), viền nền hộp (box), bóng đổ (shadow).
-              - Khung xem trước trực quan Live Preview tỉ lệ chuẩn 1:1 thời gian thực kèm nút so sánh nhanh ảnh gốc.
-              - Giao diện chống che lấp: Thanh nút bấm ghim cố định ở đáy cửa sổ trên mọi độ phân giải màn hình; đồng hồ đo thời gian chạy trực quan.
-
-            - **⚡ Tối Ưu Hóa Tốc Độ Nén Siêu Tốc & Sửa Lỗi Hệ Thống:**
-              - Nén ảnh WebP nhanh hơn gấp 10 lần nhờ thuật toán 2 pha (Two-phase encoding).
-              - Nén hàng loạt (Batch) nhanh hơn gấp 50–120 lần nhờ xử lý đa luồng đa nhân (Multi-core ThreadPoolExecutor).
-              - Thu nhỏ thông minh 1 bước (One-shot Geometric Scaling) thay thế vòng lặp 20 bước.
-              - Khắc phục triệt để lỗi stream crash khi nén ảnh JPEG.
-              - Khắc phục lỗi đuôi mở rộng khi xuất định dạng WebP.
-              - Khắc phục lỗi vị trí nút Bắt Đầu Nén và nạp an toàn module thời gian.
-              - Hệ thống kiểm thử tự động toàn diện đạt 100% Passed (30/30 tests).
+              - Đóng dấu Watermark chuyên nghiệp: Logo trong suốt & Text mã sản phẩm tự động.
+              - Tối ưu hóa tốc độ nén siêu tốc đa luồng đa nhân (ThreadPoolExecutor).
+              - Hệ thống kiểm thử tự động toàn diện đạt 100% Passed (94/94 tests).
 
             ### 📥 Tải xuống cài đặt:
             - **macOS:** Tải file `VietsubAI.dmg` bên dưới, mở ra và kéo biểu tượng ứng dụng vào thư mục `Applications` để sử dụng ngay.

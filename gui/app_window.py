@@ -28,6 +28,7 @@ from gui.guide_view import GuideView
 from gui.home_view import HomeView
 from gui.gdrive_download_dialog import GDriveDownloadDialog
 from gui.image_compressor_dialog import ImageCompressorDialog
+from gui.donate_dialog import DonateDialog
 from utils.config import get_output_dir, load_config, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
 from utils.subtitle_styles import (
@@ -264,6 +265,7 @@ class AppWindow(_BaseWindow):
             ("vietsub", "🎬", "Vietsub & Voice AI"),
             ("separator", "🎤", "Tách Beat & Lời"),
             ("downloader", "📥", "Tải Media Online"),
+            ("gdrive", "☁️", "Tải Google Drive"),
             ("compressor", "🖼️", "Nén Ảnh Hàng Loạt"),
             ("sub_editor", "✏️", "Sửa Sub Phụ Đề"),
             ("guide", "📖", "Hướng Dẫn Sử Dụng"),
@@ -372,6 +374,7 @@ class AppWindow(_BaseWindow):
             on_navigate=self._on_sidebar_select,
             on_open_folder=self._open_output_dir,
             on_open_settings=self._open_settings,
+            on_donate=self._open_donate_dialog,
         )
         self.home_view.grid(row=0, column=0, sticky="nsew")
 
@@ -1487,6 +1490,9 @@ class AppWindow(_BaseWindow):
                 except Exception:
                     pass
 
+        elif key == "gdrive":
+            self._on_gdrive_download_clicked()
+
         elif key == "separator":
             self._on_separate_audio_clicked()
 
@@ -1932,6 +1938,10 @@ class AppWindow(_BaseWindow):
         self.log_box.insert("end", text + "\n")
         self.log_box.see("end")
 
+    def _open_donate_dialog(self):
+        """Mở hộp thoại Donate / Mời tác giả một ly cà phê."""
+        DonateDialog.show_dialog(self)
+
     def _open_settings(self):
         def on_save(new_config):
             self.config = new_config
@@ -2251,11 +2261,22 @@ class AppWindow(_BaseWindow):
         ImageCompressorDialog(self, initial_files=initial_files)
 
     def _on_gdrive_download_clicked(self, initial_url: str = ""):
-        """Mở hộp thoại tải file và thư mục Google Drive trực tiếp (không zip)."""
+        """Mở hộp thoại tải file và thư mục Google Drive trực tiếp (không zip, Singleton)."""
+        if hasattr(self, "_gdrive_download_dlg") and self._gdrive_download_dlg and self._gdrive_download_dlg.winfo_exists():
+            try:
+                self._gdrive_download_dlg.lift()
+                self._gdrive_download_dlg.focus_force()
+                if initial_url:
+                    self._gdrive_download_dlg.url_var.set(initial_url)
+                return
+            except Exception:
+                pass
+
         dlg = GDriveDownloadDialog(
             self,
             default_output_dir=get_output_dir(self.config),
         )
+        self._gdrive_download_dlg = dlg
         if initial_url:
             dlg.url_var.set(initial_url)
 

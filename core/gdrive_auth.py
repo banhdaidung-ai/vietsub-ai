@@ -24,7 +24,10 @@ def get_cookies_path() -> Optional[str]:
     return None
 
 
-AUTH_COOKIE_NAMES = {"SID", "OSID", "__Secure-OSID", "__Secure-1PSID", "__Secure-3PSID", "SSID", "HSID"}
+AUTH_COOKIE_NAMES = {
+    "SID", "OSID", "__Secure-OSID", "__Secure-1PSID", "__Secure-3PSID",
+    "SSID", "HSID", "COMPASS", "SAPISID", "APISID"
+}
 
 
 def has_valid_cookies() -> bool:
@@ -39,6 +42,20 @@ def has_valid_cookies() -> bool:
         for c in jar:
             if "google" in c.domain.lower() and c.name in AUTH_COOKIE_NAMES and len(c.value or "") > 10:
                 return True
+    except Exception:
+        pass
+
+    # Fallback kiểm tra trực tiếp các dòng Netscape trong file phòng trường hợp cookiejar parser bỏ sót
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("#") or not line.strip():
+                    continue
+                parts = line.strip().split("\t")
+                if len(parts) >= 7:
+                    domain, name, val = parts[0].lower(), parts[5], parts[6]
+                    if "google" in domain and name in AUTH_COOKIE_NAMES and len(val) > 10:
+                        return True
     except Exception:
         pass
     return False
@@ -103,31 +120,55 @@ def save_cookie_file(src_path: str) -> bool:
 
 
 def cookies_dict_to_netscape(cookies: List[Dict[str, Any]], target_file: Path) -> bool:
-    """Chuyển đổi danh sách cookie từ Playwright thành tệp Netscape cookies.txt chuẩn."""
-    lines = [
-        "# Netscape HTTP Cookie File",
-        "# Created by Vietsub AI Google Drive Authentication",
-        "",
-    ]
-    for c in cookies:
-        domain = c.get("domain", "")
-        tailmatch = "TRUE" if domain.startswith(".") else "FALSE"
-        path = c.get("path", "/")
-        secure = "TRUE" if c.get("secure", False) else "FALSE"
-        expires = int(c.get("expires", -1))
-        if expires <= 0:
-            expires = int(time.time()) + 30 * 86400
-        name = c.get("name", "")
-        value = c.get("value", "")
-        if name and value:
-            lines.append(f"{domain}\t{tailmatch}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
-
+    """
+    Chuyển đổi danh sách cookie từ Playwright thành tệp Netscape cookies.txt chuẩn.
+    Bảo vệ an toàn tuyệt đối với mọi kiểu dữ liệu của trường expires (None, float, int, str).
+    """
     try:
+        lines = [
+            "# Netscape HTTP Cookie File",
+            "# Created by Vietsub AI Google Drive Authentication",
+            "",
+        ]
+        now_future = int(time.time()) + 30 * 86400
+        for c in cookies:
+            domain = c.get("domain", "")
+            tailmatch = "TRUE" if domain.startswith(".") else "FALSE"
+            path = c.get("path", "/")
+            secure = "TRUE" if c.get("secure", False) else "FALSE"
+
+            exp_val = c.get("expires")
+            if exp_val is None:
+                expires = now_future
+            else:
+                try:
+                    exp_float = float(exp_val)
+                    expires = int(exp_float) if exp_float > 0 else now_future
+                except Exception:
+                    expires = now_future
+
+            name = c.get("name", "")
+            value = c.get("value", "")
+            if name and value:
+                lines.append(f"{domain}\t{tailmatch}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
+
+        target_file.parent.mkdir(parents=True, exist_ok=True)
         with open(target_file, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[gdrive_auth] Lỗi khi ghi cookie Netscape: {e}")
         return False
+
+
+_browser_login_lock = threading.Lock()
+_browser_login_running = False
+
+
+def is_browser_login_running() -> bool:
+    """Kiểm tra xem đang có phiên trình duyệt đăng nhập Google nào đang chạy hay không."""
+    global _browser_login_running
+    return _browser_login_running
 
 
 def login_google_via_browser(
@@ -140,14 +181,37 @@ def login_google_via_browser(
     """
     Mở cửa sổ trình duyệt Chrome/Chromium để người dùng đăng nhập tài khoản Google (email công ty).
     Khi người dùng đăng nhập thành công vào Google Drive, tự động trích xuất cookie và lưu lại.
-    Hỗ trợ nút lưu thủ công ngay khi người dùng đã vào đến Drive.
+    Tự động đóng trình duyệt ngay lập tức và đưa ứng dụng trở lại màn hình làm việc.
     """
+    global _browser_login_running
+    with _browser_login_lock:
+        if _browser_login_running:
+            if on_error:
+                on_error("Đang có một cửa sổ trình duyệt đăng nhập được mở. Vui lòng thao tác trên cửa sổ đó.")
+            return
+        _browser_login_running = True
+
     def log(msg: str):
         if on_status:
             on_status(msg)
 
     try:
         log("🌐 Đang khởi động trình duyệt để đăng nhập tài khoản Google công ty...")
+
+        # Đảm bảo đường dẫn cache Playwright
+        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+            if sys.platform == "darwin":
+                _pw_cache = Path.home() / "Library" / "Caches" / "ms-playwright"
+            elif sys.platform == "win32":
+                _local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+                _pw_cache = Path(_local) / "ms-playwright"
+            else:
+                _pw_cache = Path.home() / ".cache" / "ms-playwright"
+            try:
+                _pw_cache.mkdir(parents=True, exist_ok=True)
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_pw_cache)
+            except Exception:
+                pass
 
         from playwright.sync_api import sync_playwright
 
@@ -172,8 +236,13 @@ def login_google_via_browser(
                 launch_kwargs.pop("channel", None)
                 browser = p.chromium.launch(**launch_kwargs)
 
+            # Sử dụng User-Agent Chrome 133 hiện đại để tránh bị Google hiện cảnh báo unsupported browser
+            modern_ua = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+            )
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                user_agent=modern_ua,
                 viewport={"width": 1080, "height": 760},
             )
             page = context.new_page()
@@ -189,6 +258,10 @@ def login_google_via_browser(
             for _ in range(600):  # Chờ tối đa 10 phút
                 if cancel_event and cancel_event.is_set():
                     log("⏹ Người dùng đã hủy đăng nhập.")
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
                     try:
                         browser.close()
                     except Exception:
@@ -207,28 +280,59 @@ def login_google_via_browser(
                     break
 
                 try:
-                    cur_url = page.url
+                    # Quét qua TẤT CẢ các trang/tab đang mở trong context (phòng trường hợp Google mở tab/cửa sổ mới)
+                    all_pages = list(context.pages)
+                    if not all_pages:
+                        # Người dùng đã tự tay đóng hết cửa sổ trình duyệt
+                        break
+
                     import urllib.parse
-                    parsed = urllib.parse.urlparse(cur_url)
-                    # Chỉ kích hoạt tự động khi hostname THẬT SỰ là drive.google.com VÀ không còn ở accounts.google.com
-                    if parsed.hostname == "drive.google.com" and not cur_url.startswith("https://accounts.google.com"):
-                        time.sleep(2)  # Đợi thêm 2 giây để cookie thiết lập toàn bộ
-                        cookies = context.cookies()
-                        has_auth_cookie = any(
-                            c.get("name") in ["SID", "SSID", "HSID", "OSID", "__Secure-1PSID", "__Secure-OSID"]
-                            for c in cookies
-                        )
-                        if has_auth_cookie:
-                            logged_in = True
-                            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-                            cookies_dict_to_netscape(cookies, GDRIVE_COOKIES_FILE)
-                            break
+                    for cur_p in all_pages:
+                        try:
+                            cur_url = cur_p.url
+                            if not cur_url:
+                                continue
+                            parsed = urllib.parse.urlparse(cur_url)
+                            host = (parsed.hostname or "").lower()
+                            path = parsed.path or ""
+
+                            # Kiểm tra nếu bất kỳ tab nào đã chuyển tới drive.google.com hoặc docs.google.com
+                            if ("drive.google.com" in host or "docs.google.com" in host) and not cur_url.startswith("https://accounts.google.com"):
+                                # Chờ 1 giây để cookie phiên được ghi nhận đầy đủ
+                                time.sleep(1)
+                                cookies = context.cookies()
+                                has_auth_cookie = any(
+                                    c.get("name") in [
+                                        "SID", "SSID", "HSID", "OSID", "__Secure-1PSID", "__Secure-3PSID",
+                                        "__Secure-OSID", "COMPASS", "SAPISID", "APISID", "LOGIN_INFO"
+                                    ]
+                                    for c in cookies
+                                )
+                                # Nếu đã vào trang chủ Drive hoặc đã có cookie xác thực
+                                if has_auth_cookie or ("/drive" in path) or ("folders" in path):
+                                    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                                    saved = cookies_dict_to_netscape(cookies, GDRIVE_COOKIES_FILE)
+                                    if saved:
+                                        logged_in = True
+                                        break
+                        except Exception as e_page:
+                            print(f"[gdrive_auth] Lỗi kiểm tra trang: {e_page}")
+                            continue
+
+                    if logged_in:
+                        break
+
                 except Exception:
                     # Trình duyệt có thể đã bị người dùng đóng bằng tay
                     break
 
                 time.sleep(1)
 
+            # Đóng trình duyệt ngay lập tức khi phát hiện đăng nhập thành công hoặc người dùng đóng
+            try:
+                context.close()
+            except Exception:
+                pass
             try:
                 browser.close()
             except Exception:
@@ -248,4 +352,7 @@ def login_google_via_browser(
         log(f"❌ {err}")
         if on_error:
             on_error(err)
+    finally:
+        with _browser_login_lock:
+            _browser_login_running = False
 

@@ -14,6 +14,7 @@ import customtkinter as ctk
 from core.gdrive_auth import (
     clear_cookies,
     has_valid_cookies,
+    is_browser_login_running,
     login_google_via_browser,
     save_cookie_file,
     save_raw_cookie_string,
@@ -39,6 +40,122 @@ TEXT_PRIMARY = "#F5F5F7"
 TEXT_SECONDARY = "#98989F"
 TEXT_MUTED = "#636366"
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────
+# Popup thông báo kết nối tài khoản công ty thành công
+# ─────────────────────────────────────────────────────────────
+
+class GDriveAuthSuccessModal(ctk.CTkToplevel):
+    """Popup thông báo kết nối tài khoản Google Drive công ty thành công."""
+
+    def __init__(self, parent, on_confirm: Optional[Callable[[], None]] = None):
+        super().__init__(parent)
+        self.title("Kết Nối Thành Công — Vietsub AI")
+        self.geometry("480x360")
+        self.resizable(False, False)
+        self.configure(fg_color=BG_WINDOW)
+        self.on_confirm = on_confirm
+
+        self.transient(parent)
+        self.lift()
+        self.grab_set()
+        self.focus_force()
+        try:
+            self.attributes("-topmost", True)
+            self.after(500, lambda: self.attributes("-topmost", False) if self.winfo_exists() else None)
+        except Exception:
+            pass
+
+        try:
+            self.update_idletasks()
+            px = parent.winfo_rootx() + (parent.winfo_width() - 480) // 2
+            py = parent.winfo_rooty() + (parent.winfo_height() - 360) // 2
+            self.geometry(f"+{max(0, px)}+{max(0, py)}")
+        except Exception:
+            pass
+
+        # ── Header ──
+        hdr = ctk.CTkFrame(self, fg_color="transparent")
+        hdr.pack(fill="x", padx=24, pady=(22, 14))
+
+        ctk.CTkLabel(hdr, text="🛡️", font=("Arial", 36)).pack(side="left", padx=(0, 14))
+
+        title_box = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_box.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(
+            title_box,
+            text="Kết Nối Thành Công!",
+            font=("Arial", 18, "bold"),
+            text_color=APPLE_GREEN,
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            title_box,
+            text="Tài khoản Google Workspace công ty đã được xác thực an toàn.",
+            font=("Arial", 11),
+            text_color=TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(2, 0))
+
+        # ── Info Card ──
+        card = ctk.CTkFrame(
+            self,
+            fg_color=BG_CARD,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_CARD,
+        )
+        card.pack(fill="both", expand=True, padx=24, pady=(0, 18))
+
+        items = [
+            ("🟢 Trạng thái:", "Đã kích hoạt phiên làm việc công ty", APPLE_GREEN),
+            ("🔒 Bảo mật:", "Cookie được lưu trữ an toàn trên máy", TEXT_PRIMARY),
+            ("⚡ Quyền tải:", "Sẵn sàng tải mọi tệp/thư mục nội bộ", APPLE_BLUE),
+        ]
+
+        for i, (label, val, clr) in enumerate(items):
+            row = ctk.CTkFrame(card, fg_color="transparent")
+            row.pack(fill="x", padx=16, pady=(12 if i == 0 else 8, 12 if i == len(items) - 1 else 0))
+
+            ctk.CTkLabel(
+                row,
+                text=label,
+                font=("Arial", 11, "bold"),
+                text_color=TEXT_SECONDARY,
+                width=100,
+                anchor="w",
+            ).pack(side="left")
+
+            lbl_val = ctk.CTkLabel(
+                row,
+                text=val,
+                font=("Arial", 11, "bold" if clr in (APPLE_GREEN, APPLE_BLUE) else "normal"),
+                text_color=clr,
+                anchor="w",
+            )
+            lbl_val.pack(side="left", fill="x", expand=True)
+
+        # ── Button ──
+        btn_bar = ctk.CTkFrame(self, fg_color="transparent")
+        btn_bar.pack(fill="x", padx=24, pady=(0, 22))
+
+        ctk.CTkButton(
+            btn_bar,
+            text="🚀 Bắt Đầu Tải Ngay",
+            font=("Arial", 12, "bold"),
+            fg_color=APPLE_GREEN,
+            hover_color=APPLE_GREEN_HOVER,
+            text_color="#FFFFFF",
+            height=38,
+            corner_radius=8,
+            command=self._confirm_and_close,
+        ).pack(fill="x")
+
+    def _confirm_and_close(self):
+        self.destroy()
+        if callable(self.on_confirm):
+            self.on_confirm()
 
 
 class GDriveAuthDialog(ctk.CTkToplevel):
@@ -299,7 +416,21 @@ class GDriveAuthDialog(ctk.CTkToplevel):
         self._update_status(False)
         self.lbl_browser_msg.configure(text="Đã đăng xuất. Bạn có thể đăng nhập lại bất kỳ lúc nào.", text_color=TEXT_SECONDARY)
 
+    def _show_success_modal(self):
+        """Hiển thị popup thông báo kết nối tài khoản công ty hoàn tất."""
+        try:
+            GDriveAuthSuccessModal(self, on_confirm=self._on_close)
+        except Exception:
+            pass
+
     def _start_browser_login(self):
+        if is_browser_login_running():
+            self.lbl_browser_msg.configure(
+                text="⚠️ Trình duyệt đăng nhập đang mở, vui lòng thao tác trên cửa sổ đó.",
+                text_color=APPLE_ORANGE,
+            )
+            return
+
         self._cancel_event.clear()
         self._manual_save_event.clear()
         self.btn_launch_browser.configure(state="disabled")
@@ -307,18 +438,31 @@ class GDriveAuthDialog(ctk.CTkToplevel):
         self.lbl_browser_msg.configure(text="⏳ Đang mở trình duyệt... Vui lòng kiểm tra cửa sổ mới mở.", text_color=APPLE_BLUE)
 
         def on_status(msg: str):
-            self.after(0, lambda: self.lbl_browser_msg.configure(text=msg))
+            if self.winfo_exists():
+                self.after(0, lambda: self.lbl_browser_msg.configure(text=msg))
 
         def on_success(email: str):
             def handle():
+                if not self.winfo_exists():
+                    return
+                try:
+                    self.lift()
+                    self.focus_force()
+                    self.attributes("-topmost", True)
+                    self.after(400, lambda: self.attributes("-topmost", False) if self.winfo_exists() else None)
+                except Exception:
+                    pass
                 self.btn_launch_browser.configure(state="normal")
                 self.btn_manual_save.configure(state="disabled")
                 self.lbl_browser_msg.configure(text="🎉 Đăng nhập và lưu Cookie thành công!", text_color=APPLE_GREEN)
                 self._update_status(True)
+                self._show_success_modal()
             self.after(0, handle)
 
         def on_error(err: str):
             def handle():
+                if not self.winfo_exists():
+                    return
                 self.btn_launch_browser.configure(state="normal")
                 self.btn_manual_save.configure(state="disabled")
                 self.lbl_browser_msg.configure(text=f"❌ {err}", text_color=APPLE_RED)
@@ -345,6 +489,7 @@ class GDriveAuthDialog(ctk.CTkToplevel):
             self._update_status(True)
             self.txt_cookie.delete("1.0", "end")
             self.txt_cookie.insert("1.0", "✅ Đã lưu và kích hoạt Cookie thành công!")
+            self._show_success_modal()
         else:
             self.txt_cookie.insert("end", "\n❌ Cookie không hợp lệ hoặc thiếu thông tin.")
 
@@ -356,8 +501,9 @@ class GDriveAuthDialog(ctk.CTkToplevel):
         )
         if f:
             ok = save_cookie_file(f)
-            if ok:
+            if ok and has_valid_cookies():
                 self._update_status(True)
+                self._show_success_modal()
 
     def _on_close(self):
         self._cancel_event.set()
