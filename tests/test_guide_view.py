@@ -54,15 +54,21 @@ def test_app_window_tab_switching():
     assert hasattr(app, "guide_view")
     assert hasattr(app, "_studio_widgets")
 
-    # Mặc định ở tab Studio
+    # Mặc định ở Trang Chủ
+    assert app.nav_tabs.get() == "🏠 Trang Chủ"
+    assert hasattr(app, "home_view")
+    assert hasattr(app, "sidebar_card")
+
+    # Chuyển sang Tab Studio
+    app._switch_to_tab("🎬 Studio Làm Việc")
     assert app.nav_tabs.get() == "🎬 Studio Làm Việc"
 
     # Chuyển sang Tab Hướng Dẫn
     app._switch_to_tab("📖 Hướng Dẫn Sử Dụng")
     assert app.nav_tabs.get() == "📖 Hướng Dẫn Sử Dụng"
 
-    # Chuyển lại về Tab Studio
-    app._switch_to_tab("🎬 Studio Làm Việc")
-    assert app.nav_tabs.get() == "🎬 Studio Làm Việc"
+    # Chuyển lại về Trang Chủ
+    app._switch_to_tab("🏠 Trang Chủ")
+    assert app.nav_tabs.get() == "🏠 Trang Chủ"
 
     app.destroy()

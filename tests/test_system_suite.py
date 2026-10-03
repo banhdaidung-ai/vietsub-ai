@@ -149,9 +149,9 @@ def test_7_gemini_api_connectivity():
         return
     
     client = genai.Client(api_key=api_key)
-    # Ping thử một prompt ngắn với các model khả dụng
     response = None
-    for m in ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]:
+    exhausted_err = None
+    for m in ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]:
         try:
             response = client.models.generate_content(
                 model=m,
@@ -159,8 +159,17 @@ def test_7_gemini_api_connectivity():
             )
             if response and response.text:
                 break
-        except Exception:
+        except Exception as e:
+            err_str = str(e).lower()
+            if "resource_exhausted" in err_str or "credits" in err_str or "402" in err_str or "429" in err_str:
+                exhausted_err = e
+                break
             continue
+
+    if exhausted_err:
+        print(f"   ⚠️ Gemini API kết nối được với Google nhưng tài khoản hết credits: {exhausted_err} [PASS-QUOTA]")
+        return
+
     assert response and response.text, "Gemini API phản hồi rỗng"
     print(f"   ✅ Kết nối Gemini API thành công! Phản hồi từ Google: '{response.text.strip()}' [PASS]")
 

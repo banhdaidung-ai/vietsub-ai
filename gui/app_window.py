@@ -25,6 +25,9 @@ from gui.completion_dialog import CompletionDialog, _fmt_size
 from gui.subtitle_editor_dialog import SubtitleEditorDialog
 from gui.audio_separator_dialog import AudioSeparatorDialog
 from gui.guide_view import GuideView
+from gui.home_view import HomeView
+from gui.gdrive_download_dialog import GDriveDownloadDialog
+from gui.image_compressor_dialog import ImageCompressorDialog
 from utils.config import get_output_dir, load_config, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
 from utils.subtitle_styles import (
@@ -104,9 +107,12 @@ class AppWindow(_BaseWindow):
         super().__init__()
 
         self.title("Vietsub AI Studio — macOS Edition")
-        self.geometry("980x830")
-        self.minsize(920, 750)
+        self.geometry("1180x830")
+        self.minsize(1040, 720)
         self.configure(fg_color=BG_WINDOW)
+
+        self._current_tab = "home"
+        self._sidebar_buttons = {}
 
         self.config = load_config()
         self.task_queue = queue.Queue()
@@ -133,6 +139,24 @@ class AppWindow(_BaseWindow):
         # Polling queue định kỳ (100ms) để cập nhật UI từ background thread
         self.after(100, self._process_queue)
 
+        # Mặc định full màn hình (maximized) khi mở app
+        self.after(50, self._maximize_window)
+
+    def _maximize_window(self):
+        """Mở cửa sổ cực đại / full màn hình theo chuẩn hệ điều hành."""
+        try:
+            self.state("zoomed")
+        except Exception:
+            try:
+                self.attributes("-zoomed", True)
+            except Exception:
+                try:
+                    sw = self.winfo_screenwidth()
+                    sh = self.winfo_screenheight()
+                    self.geometry(f"{sw}x{sh}+0+0")
+                except Exception:
+                    pass
+
     def _set_app_icon(self):
         try:
             if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -150,42 +174,44 @@ class AppWindow(_BaseWindow):
             pass
 
     def _build_ui(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(4, weight=1)
+        self.grid_columnconfigure(0, weight=0, minsize=230)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         # ═════════════════════════════════════════════════════════
-        # 1. HEADER BAR (macOS UNIFIED TITLEBAR)
+        # 1. SIDEBAR NAVIGATION (macOS PRO STUDIO SIDEBAR)
         # ═════════════════════════════════════════════════════════
-        header_card = ctk.CTkFrame(
+        self.sidebar_card = ctk.CTkFrame(
             self,
             fg_color=BG_HEADER,
-            corner_radius=12,
+            corner_radius=14,
             border_width=1,
             border_color=BORDER_HEADER,
+            width=230,
         )
-        header_card.grid(row=0, column=0, sticky="ew", padx=20, pady=(12, 8))
-        header_card.grid_columnconfigure(0, weight=1)
-        header_card.grid_columnconfigure(1, weight=1)
+        self.sidebar_card.grid(row=0, column=0, sticky="nsew", padx=(14, 8), pady=12)
+        self.sidebar_card.grid_propagate(False)
+        self.sidebar_card.grid_columnconfigure(0, weight=1)
+        self.sidebar_card.grid_rowconfigure(2, weight=1)
 
-        # Left (Row 0): Brand Logo & Title
-        brand_frame = ctk.CTkFrame(header_card, fg_color="transparent")
-        brand_frame.grid(row=0, column=0, sticky="w", padx=16, pady=(10, 4))
+        # ── Brand Header ──
+        brand_frame = ctk.CTkFrame(self.sidebar_card, fg_color="transparent")
+        brand_frame.grid(row=0, column=0, sticky="ew", padx=14, pady=(16, 8))
 
-        # Load Icon
         try:
             if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
                 logo_path = Path(sys._MEIPASS) / "assets" / "icon.png"
             else:
                 logo_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
             if logo_path.exists():
-                logo_img = ctk.CTkImage(Image.open(logo_path), size=(36, 36))
+                logo_img = ctk.CTkImage(Image.open(logo_path), size=(32, 32))
                 lbl_logo = ctk.CTkLabel(brand_frame, image=logo_img, text="")
-                lbl_logo.pack(side="left", padx=(0, 10))
+                lbl_logo.pack(side="left", padx=(0, 8))
         except Exception:
             pass
 
         title_inner = ctk.CTkFrame(brand_frame, fg_color="transparent")
-        title_inner.pack(side="left")
+        title_inner.pack(side="left", fill="x", expand=True)
 
         title_row = ctk.CTkFrame(title_inner, fg_color="transparent")
         title_row.pack(anchor="w")
@@ -193,119 +219,178 @@ class AppWindow(_BaseWindow):
         ctk.CTkLabel(
             title_row,
             text="Vietsub AI",
-            font=("Arial", 20, "bold"),
+            font=("Arial", 16, "bold"),
             text_color=TEXT_PRIMARY,
         ).pack(side="left")
 
         ctk.CTkLabel(
             title_row,
-            text="PRO STUDIO",
-            font=("Arial", 10, "bold"),
+            text="PRO",
+            font=("Arial", 9, "bold"),
             fg_color=APPLE_BLUE,
             text_color="#FFFFFF",
-            corner_radius=6,
-            width=84,
-            height=20,
-        ).pack(side="left", padx=8)
+            corner_radius=5,
+            width=38,
+            height=18,
+        ).pack(side="left", padx=6)
 
         ctk.CTkLabel(
             title_inner,
-            text="Studio Dịch Thuật, Phụ Đề & Lồng Tiếng AI Đẳng Cấp",
-            font=("Arial", 11),
+            text="Studio Edition • macOS",
+            font=("Arial", 10),
             text_color=TEXT_SECONDARY,
         ).pack(anchor="w")
 
-        # Right (Row 0): System Health Badges & Controls
-        controls_frame = ctk.CTkFrame(header_card, fg_color="transparent")
-        controls_frame.grid(row=0, column=1, sticky="e", padx=16, pady=(10, 4))
-
-        # Bottom (Row 1 - Spanning across): Main Navigation Tabs (Studio vs Hướng Dẫn)
-        nav_container = ctk.CTkFrame(header_card, fg_color="transparent")
-        nav_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(4, 10))
-
-        self.nav_tabs = ctk.CTkSegmentedButton(
-            nav_container,
-            values=["🎬 Studio Làm Việc", "📖 Hướng Dẫn Sử Dụng"],
-            command=self._on_main_nav_changed,
-            font=("Arial", 12, "bold"),
-            height=34,
-            width=360,
-            corner_radius=8,
-            fg_color=BG_INSET,
-            selected_color=APPLE_BLUE,
-            selected_hover_color=APPLE_BLUE_HOVER,
-            unselected_color=BG_INSET,
-            unselected_hover_color=BG_PILL,
-            text_color=TEXT_PRIMARY,
+        # Divider
+        ctk.CTkFrame(self.sidebar_card, height=1, fg_color=BORDER_HEADER).grid(
+            row=1, column=0, sticky="ew", padx=12, pady=(0, 6)
         )
-        self.nav_tabs.set("🎬 Studio Làm Việc")
-        self.nav_tabs.pack(anchor="center")
 
-        # Status Badges
+        # ── Menu Items Container ──
+        self.sidebar_menu_container = ctk.CTkFrame(self.sidebar_card, fg_color="transparent")
+        self.sidebar_menu_container.grid(row=2, column=0, sticky="nsew", padx=4, pady=0)
+        self.sidebar_menu_container.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self.sidebar_menu_container,
+            text="CHỨC NĂNG CHÍNH",
+            font=("Arial", 10, "bold"),
+            text_color=TEXT_TERTIARY,
+            anchor="w",
+        ).pack(fill="x", padx=14, pady=(2, 6))
+
+        menu_items = [
+            ("home", "🏠", "Trang Chủ"),
+            ("vietsub", "🎬", "Vietsub & Voice AI"),
+            ("separator", "🎤", "Tách Beat & Lời"),
+            ("downloader", "📥", "Tải Media Online"),
+            ("compressor", "🖼️", "Nén Ảnh Hàng Loạt"),
+            ("sub_editor", "✏️", "Sửa Sub Phụ Đề"),
+            ("guide", "📖", "Hướng Dẫn Sử Dụng"),
+        ]
+
+        self._sidebar_buttons = {}
+        for key, icon, label in menu_items:
+            btn = ctk.CTkButton(
+                self.sidebar_menu_container,
+                text=f"  {icon}  {label}",
+                font=("Arial", 12),
+                anchor="w",
+                height=36,
+                corner_radius=8,
+                fg_color="transparent",
+                hover_color=BG_PILL_HOVER,
+                text_color=TEXT_SECONDARY,
+                command=lambda k=key: self._on_sidebar_select(k),
+            )
+            btn.pack(fill="x", padx=8, pady=2)
+            self._sidebar_buttons[key] = btn
+
+        # ── Bottom System Health & Controls in Sidebar ──
+        sidebar_bottom = ctk.CTkFrame(self.sidebar_card, fg_color="transparent")
+        sidebar_bottom.grid(row=3, column=0, sticky="ew", padx=10, pady=(4, 12))
+
+        ctk.CTkFrame(sidebar_bottom, height=1, fg_color=BORDER_HEADER).pack(
+            fill="x", pady=(0, 8)
+        )
+
         self.badge_ffmpeg = ctk.CTkButton(
-            controls_frame,
+            sidebar_bottom,
             text="⚡ FFmpeg: Đang kiểm tra",
-            font=("Arial", 11, "bold"),
+            font=("Arial", 10, "bold"),
             fg_color=BG_PILL,
             hover_color=BG_PILL_HOVER,
             text_color=TEXT_SECONDARY,
-            corner_radius=14,
-            height=28,
+            corner_radius=8,
+            height=26,
             command=self._on_ffmpeg_badge_click,
         )
-        self.badge_ffmpeg.pack(side="left", padx=4)
+        self.badge_ffmpeg.pack(fill="x", pady=2)
 
         self.badge_api = ctk.CTkLabel(
-            controls_frame,
+            sidebar_bottom,
             text="🤖 Gemini: Tự động",
-            font=("Arial", 11, "bold"),
-            fg_color=BG_PILL,
+            font=("Arial", 10, "bold"),
+            fg_color=BG_INSET,
             text_color=APPLE_CYAN,
-            corner_radius=14,
-            padx=12,
-            pady=4,
-            height=28,
-        )
-        self.badge_api.pack(side="left", padx=4)
-
-        # Theme toggle button
-        self.btn_theme = ctk.CTkButton(
-            controls_frame,
-            text="🌓",
-            width=34,
-            height=28,
             corner_radius=8,
+            height=26,
+        )
+        self.badge_api.pack(fill="x", pady=2)
+
+        # Action row at the very bottom
+        bottom_tools = ctk.CTkFrame(sidebar_bottom, fg_color="transparent")
+        bottom_tools.pack(fill="x", pady=(6, 0))
+
+        self.btn_theme = ctk.CTkButton(
+            bottom_tools,
+            text="🌓",
+            width=32,
+            height=28,
+            corner_radius=7,
             fg_color=BG_PILL,
             hover_color=BG_PILL_HOVER,
             command=self._toggle_theme,
         )
-        self.btn_theme.pack(side="left", padx=4)
+        self.btn_theme.pack(side="left", padx=(0, 4))
 
-        # Settings button
         ctk.CTkButton(
-            controls_frame,
+            bottom_tools,
             text="⚙️ Cài đặt",
             font=("Arial", 11, "bold"),
-            width=88,
             height=28,
-            corner_radius=8,
+            corner_radius=7,
             fg_color=BG_PILL,
             hover_color=BG_PILL_HOVER,
             text_color=TEXT_PRIMARY,
             command=self._open_settings,
-        ).pack(side="left", padx=(4, 0))
+        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+        ctk.CTkButton(
+            bottom_tools,
+            text="📁",
+            width=32,
+            height=28,
+            corner_radius=7,
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=TEXT_PRIMARY,
+            command=self._open_output_dir,
+        ).pack(side="right")
 
         # ═════════════════════════════════════════════════════════
-        # 2. INPUT SECTION (NGUỒN VIDEO / LINK ONLINE)
+        # 2. MAIN WORKSPACE CANVAS (RIGHT COLUMN)
+        # ═════════════════════════════════════════════════════════
+        self.main_canvas = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_canvas.grid(row=0, column=1, sticky="nsew", padx=(0, 14), pady=12)
+        self.main_canvas.grid_columnconfigure(0, weight=1)
+        self.main_canvas.grid_rowconfigure(0, weight=1)
+
+        # ── View 1: Home Dashboard ──
+        self.home_view = HomeView(
+            self.main_canvas,
+            on_navigate=self._on_sidebar_select,
+            on_open_folder=self._open_output_dir,
+            on_open_settings=self._open_settings,
+        )
+        self.home_view.grid(row=0, column=0, sticky="nsew")
+
+        # ── View 2: Vietsub Studio Container ──
+        self.vietsub_container = ctk.CTkFrame(self.main_canvas, fg_color="transparent")
+        self.vietsub_container.grid_columnconfigure(0, weight=1)
+        self.vietsub_container.grid_rowconfigure(3, weight=1)
+
+        # ═════════════════════════════════════════════════════════
+        # 3. INPUT SECTION (NGUỒN VIDEO / LINK ONLINE)
         # ═════════════════════════════════════════════════════════
         self.input_card = ctk.CTkFrame(
-            self,
+            self.vietsub_container,
             corner_radius=14,
             fg_color=BG_CARD,
             border_width=1,
             border_color=BORDER_CARD,
         )
-        self.input_card.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 6))
+        self.input_card.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 6))
 
         self.tabview = ctk.CTkTabview(
             self.input_card,
@@ -372,9 +457,9 @@ class AppWindow(_BaseWindow):
         # Auxiliary toolbar buttons styled cleanly as subtle pills
         self.btn_separate_audio = ctk.CTkButton(
             file_action_bar,
-            text="🎤 Tách Beat & Lời (AI)",
+            text="🎤 Tách Beat & Lời",
             font=("Arial", 11, "bold"),
-            width=165,
+            width=140,
             height=28,
             corner_radius=7,
             fg_color=BG_PILL,
@@ -386,11 +471,27 @@ class AppWindow(_BaseWindow):
         )
         self.btn_separate_audio.pack(side="right", padx=(6, 0))
 
+        self.btn_compress_images = ctk.CTkButton(
+            file_action_bar,
+            text="🖼️ Nén Ảnh",
+            font=("Arial", 11, "bold"),
+            width=105,
+            height=28,
+            corner_radius=7,
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=APPLE_CYAN,
+            border_width=1,
+            border_color="#1E3A5F",
+            command=self._on_compress_images_clicked,
+        )
+        self.btn_compress_images.pack(side="right", padx=(6, 0))
+
         self.btn_extract_audio = ctk.CTkButton(
             file_action_bar,
-            text="🎵 Trích Audio (MP3 320k)",
+            text="🎵 Trích Audio",
             font=("Arial", 11, "bold"),
-            width=165,
+            width=125,
             height=28,
             corner_radius=7,
             fg_color=BG_PILL,
@@ -400,7 +501,23 @@ class AppWindow(_BaseWindow):
             border_color=APPLE_ORANGE_BORDER,
             command=self._on_extract_audio_from_file_clicked,
         )
-        self.btn_extract_audio.pack(side="right")
+        self.btn_extract_audio.pack(side="right", padx=(6, 0))
+
+        self.btn_gdrive = ctk.CTkButton(
+            file_action_bar,
+            text="📥 Tải Google Drive",
+            font=("Arial", 11, "bold"),
+            width=145,
+            height=28,
+            corner_radius=7,
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOVER,
+            text_color=APPLE_CYAN,
+            border_width=1,
+            border_color="#1E3A8A",
+            command=self._on_gdrive_download_clicked,
+        )
+        self.btn_gdrive.pack(side="right")
 
         # ── Tab 2: URL Online ──
         self.url_var = ctk.StringVar()
@@ -570,13 +687,13 @@ class AppWindow(_BaseWindow):
         # 3. STUDIO CONTROLS (THIẾT LẬP DỊCH THUẬT & PHỤ ĐỀ)
         # ═════════════════════════════════════════════════════════
         settings_card = ctk.CTkFrame(
-            self,
+            self.vietsub_container,
             corner_radius=14,
             fg_color=BG_CARD,
             border_width=1,
             border_color=BORDER_CARD,
         )
-        settings_card.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 6))
+        settings_card.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 6))
 
         # Dòng 1: Ngôn ngữ nguồn (trái) & Lồng tiếng AI / Editor (phải)
         settings_row1 = ctk.CTkFrame(settings_card, fg_color="transparent")
@@ -874,13 +991,13 @@ class AppWindow(_BaseWindow):
         # 4. PIPELINE STAGE TRACKER (macOS PROGRESS STEPPER)
         # ═════════════════════════════════════════════════════════
         tracker_card = ctk.CTkFrame(
-            self,
+            self.vietsub_container,
             corner_radius=12,
             fg_color=BG_CARD,
             border_width=1,
             border_color=BORDER_CARD,
         )
-        tracker_card.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 6))
+        tracker_card.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 6))
         tracker_card.grid_columnconfigure((0, 2, 4, 6), weight=1)
 
         self.steps = []
@@ -917,13 +1034,13 @@ class AppWindow(_BaseWindow):
         # 5. TERMINAL & LOG CONSOLE CARD (macOS CONSOLE WINDOW)
         # ═════════════════════════════════════════════════════════
         log_card = ctk.CTkFrame(
-            self,
+            self.vietsub_container,
             corner_radius=14,
             fg_color=BG_CARD,
             border_width=1,
             border_color=BORDER_CARD,
         )
-        log_card.grid(row=4, column=0, sticky="nsew", padx=20, pady=(0, 6))
+        log_card.grid(row=3, column=0, sticky="nsew", padx=4, pady=(0, 6))
         log_card.grid_columnconfigure(0, weight=1)
         log_card.grid_rowconfigure(2, weight=1)
 
@@ -1008,8 +1125,8 @@ class AppWindow(_BaseWindow):
         # ═════════════════════════════════════════════════════════
         # 6. BOTTOM ACTION FOOTER
         # ═════════════════════════════════════════════════════════
-        footer_card = ctk.CTkFrame(self, fg_color="transparent")
-        footer_card.grid(row=5, column=0, sticky="ew", padx=20, pady=(4, 10))
+        footer_card = ctk.CTkFrame(self.vietsub_container, fg_color="transparent")
+        footer_card.grid(row=4, column=0, sticky="ew", padx=4, pady=(4, 6))
         footer_card.grid_columnconfigure(0, weight=1)
 
         # Status text left
@@ -1072,8 +1189,8 @@ class AppWindow(_BaseWindow):
         # ═════════════════════════════════════════════════════════
         # 7. AUTHOR & BRANDING BAR (macOS FOOTER STRIP)
         # ═════════════════════════════════════════════════════════
-        credit_bar = ctk.CTkFrame(self, fg_color="transparent")
-        credit_bar.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 8))
+        credit_bar = ctk.CTkFrame(self.vietsub_container, fg_color="transparent")
+        credit_bar.grid(row=5, column=0, sticky="ew", padx=4, pady=(0, 4))
         credit_bar.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -1105,14 +1222,36 @@ class AppWindow(_BaseWindow):
             self.footer_card,
             self.credit_bar,
         ]
-        self._studio_grid_info = {w: w.grid_info() for w in self._studio_widgets}
+
+        class _NavTabsShim:
+            def __init__(shim_self, parent):
+                shim_self.parent = parent
+            def get(shim_self):
+                cv = getattr(shim_self.parent, "_current_canvas_view", "home")
+                if cv == "guide":
+                    return "📖 Hướng Dẫn Sử Dụng"
+                elif cv == "home":
+                    return "🏠 Trang Chủ"
+                return "🎬 Studio Làm Việc"
+            def set(shim_self, val):
+                shim_self.parent._switch_to_tab(val)
+
+        self.nav_tabs = _NavTabsShim(self)
 
         # Khởi tạo Landing Page Hướng Dẫn Sử Dụng
         self.guide_view = GuideView(
-            self,
-            on_start_clicked=lambda: self._switch_to_tab("🎬 Studio Làm Việc"),
+            self.main_canvas,
+            on_start_clicked=lambda: self._on_sidebar_select("vietsub"),
         )
+        self.guide_view.grid(row=0, column=0, sticky="nsew")
         self.guide_view.grid_remove()
+
+        # Ban đầu hiển thị Trang Chủ (Home Dashboard)
+        self.vietsub_container.grid(row=0, column=0, sticky="nsew")
+        self.vietsub_container.grid_remove()
+        self.home_view.grid(row=0, column=0, sticky="nsew")
+        self._current_canvas_view = "home"
+        self._select_sidebar_key("home")
 
         # Khởi tạo tính năng Kéo & Thả (Drag & Drop)
         self._setup_drag_and_drop()
@@ -1123,12 +1262,10 @@ class AppWindow(_BaseWindow):
             return
 
         widgets_to_register = [self]
-        if hasattr(self, "input_card"):
-            widgets_to_register.append(self.input_card)
-        if hasattr(self, "tabview"):
-            widgets_to_register.append(self.tabview)
-        if hasattr(self, "file_entry"):
-            widgets_to_register.append(self.file_entry)
+        for attr in ("sidebar_card", "main_canvas", "home_view", "vietsub_container", "input_card", "tabview", "file_entry"):
+            w = getattr(self, attr, None)
+            if w is not None:
+                widgets_to_register.append(w)
 
         for w in widgets_to_register:
             try:
@@ -1193,6 +1330,17 @@ class AppWindow(_BaseWindow):
 
         ext = Path(first_file).suffix.lower()
 
+        # Kiểm tra nếu là file ảnh -> Tự động mở trình nén ảnh thông minh
+        image_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
+        image_files = [f for f in files if Path(f).suffix.lower() in image_exts]
+        if image_files:
+            self._log_msg(f"🖼️ Đã nhận {len(image_files)} tệp hình ảnh kéo thả. Đang mở trình nén ảnh...")
+            try:
+                ImageCompressorDialog(self, initial_files=image_files)
+            except Exception as e:
+                self._log_msg(f"❌ Không thể mở trình nén ảnh: {e}")
+            return
+
         # Nếu là file phụ đề .srt, hỗ trợ mở trực tiếp trình chỉnh sửa phụ đề
         if ext == ".srt":
             self._log_msg(f"📝 Đã nhận file phụ đề: {os.path.basename(first_file)}")
@@ -1211,9 +1359,8 @@ class AppWindow(_BaseWindow):
         if ext not in media_exts:
             self._log_msg(f"⚠️ Tệp '{os.path.basename(first_file)}' có định dạng '{ext}' có thể không được hỗ trợ. Đã nạp đường dẫn để thử xử lý.")
 
-        # Tự động chuyển về Tab Studio nếu đang ở Tab Hướng Dẫn
-        if hasattr(self, "nav_tabs"):
-            self._switch_to_tab("🎬 Studio Làm Việc")
+        # Tự động chuyển về Tab Studio
+        self._on_sidebar_select("vietsub")
 
         # Tự động chuyển về tab Chọn File nếu người dùng đang ở tab Link Online
         if hasattr(self, "tabview"):
@@ -1314,49 +1461,107 @@ class AppWindow(_BaseWindow):
     def _reset_steps(self):
         self._set_active_step(0)
 
-    def _on_main_nav_changed(self, selected_tab: str):
-        """Xử lý sự kiện khi người dùng nhấn chuyển Tab ở thanh điều hướng trên cùng."""
-        self._switch_to_tab(selected_tab)
+    def _on_sidebar_select(self, key: str):
+        """Xử lý điều hướng khi người dùng nhấp chọn mục trong Sidebar hoặc từ thẻ Trang Chủ."""
+        if key == "home":
+            self._show_canvas_view("home")
+            self._select_sidebar_key("home")
+
+        elif key == "vietsub":
+            self._show_canvas_view("vietsub")
+            self._select_sidebar_key("vietsub")
+            if hasattr(self, "tabview"):
+                try:
+                    self.tabview.set("📂 Chọn File Video Trên Máy")
+                except Exception:
+                    pass
+
+        elif key == "downloader":
+            self._show_canvas_view("vietsub")
+            self._select_sidebar_key("downloader")
+            if hasattr(self, "tabview"):
+                try:
+                    self.tabview.set("🌐 Dán Link Online (TikTok, YouTube, Facebook...)")
+                    if hasattr(self, "url_entry"):
+                        self.url_entry.focus()
+                except Exception:
+                    pass
+
+        elif key == "separator":
+            self._on_separate_audio_clicked()
+
+        elif key == "compressor":
+            self._on_compress_images_clicked()
+
+        elif key == "sub_editor":
+            self._open_standalone_editor()
+
+        elif key == "guide":
+            self._show_canvas_view("guide")
+            self._select_sidebar_key("guide")
+
+    def _select_sidebar_key(self, active_key: str):
+        """Đổi màu nổi bật mục menu đang chọn trên Sidebar chuẩn phong cách Apple macOS."""
+        self._active_sidebar_key = active_key
+        if not hasattr(self, "_sidebar_buttons"):
+            return
+
+        for k, btn in self._sidebar_buttons.items():
+            if k == active_key:
+                btn.configure(
+                    fg_color=APPLE_BLUE,
+                    text_color="#FFFFFF",
+                    hover_color=APPLE_BLUE_HOVER,
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    text_color=TEXT_SECONDARY,
+                    hover_color=BG_PILL_HOVER,
+                )
+
+    def _show_canvas_view(self, view_name: str):
+        """Chuyển đổi các view trên Main Canvas: 'home', 'vietsub', 'guide'."""
+        self._current_canvas_view = view_name
+
+        if hasattr(self, "home_view"):
+            self.home_view.grid_remove()
+        if hasattr(self, "vietsub_container"):
+            self.vietsub_container.grid_remove()
+        if hasattr(self, "guide_view"):
+            self.guide_view.grid_remove()
+
+        if view_name == "home":
+            if hasattr(self, "home_view"):
+                self.home_view.grid(row=0, column=0, sticky="nsew")
+        elif view_name == "vietsub":
+            if hasattr(self, "vietsub_container"):
+                self.vietsub_container.grid(row=0, column=0, sticky="nsew")
+        elif view_name == "guide":
+            if hasattr(self, "guide_view"):
+                self.guide_view.grid(row=0, column=0, sticky="nsew")
 
     def _switch_to_tab(self, tab_name: str):
-        """Chuyển đổi giao diện giữa Studio Làm Việc và Hướng Dẫn Sử Dụng an toàn 100%."""
-        if hasattr(self, "nav_tabs") and self.nav_tabs.get() != tab_name:
-            self.nav_tabs.set(tab_name)
-
-        if "Hướng Dẫn" in tab_name:
-            # Ẩn toàn bộ widget của Studio
-            for w in getattr(self, "_studio_widgets", []):
-                try:
-                    w.grid_remove()
-                except Exception:
-                    pass
-            # Cấu hình grid row để GuideView chiếm trọn chiều cao
-            self.grid_rowconfigure(4, weight=0)
-            self.grid_rowconfigure(1, weight=1)
-            # Hiển thị GuideView
-            if hasattr(self, "guide_view"):
-                self.guide_view.grid(row=1, column=0, rowspan=6, sticky="nsew", padx=20, pady=(0, 8))
+        """Hỗ trợ tương thích ngược cho các lời gọi _switch_to_tab cũ."""
+        if "Hướng Dẫn" in tab_name or tab_name == "guide":
+            self._on_sidebar_select("guide")
+        elif "Trang Chủ" in tab_name or tab_name == "home":
+            self._on_sidebar_select("home")
         else:
-            # Ẩn GuideView
-            if hasattr(self, "guide_view"):
-                try:
-                    self.guide_view.grid_remove()
-                except Exception:
-                    pass
-            # Khôi phục cấu hình grid row Studio (row 4 log_card nhận weight=1)
-            self.grid_rowconfigure(1, weight=0)
-            self.grid_rowconfigure(4, weight=1)
-            # Khôi phục toàn bộ widget Studio về vị trí ban đầu
-            for w in getattr(self, "_studio_widgets", []):
-                try:
-                    w.grid()
-                except Exception:
-                    if hasattr(self, "_studio_grid_info") and w in self._studio_grid_info:
-                        w.grid(**self._studio_grid_info[w])
+            self._on_sidebar_select("vietsub")
+
+    def _on_main_nav_changed(self, selected_tab: str):
+        self._switch_to_tab(selected_tab)
 
     def _on_tab_changed(self):
         """Gọi khi chuyển đổi giữa tab Chọn File và tab Link Online."""
         self._update_action_button()
+        if hasattr(self, "tabview") and getattr(self, "_current_canvas_view", "") == "vietsub":
+            current_tab = self.tabview.get()
+            if "Link Online" in current_tab:
+                self._select_sidebar_key("downloader")
+            else:
+                self._select_sidebar_key("vietsub")
 
     def _on_url_mode_changed(self, selected_label: str):
         """Xử lý khi người dùng chọn 'Video Gốc', 'Chỉ Tải Nhạc' hoặc 'Tải & Vietsub luôn'."""
@@ -1784,6 +1989,10 @@ class AppWindow(_BaseWindow):
             if clean_url:
                 source = clean_url
                 self.url_var.set(clean_url)
+            if "drive.google.com" in source or "docs.google.com" in source:
+                self._log_msg("💡 Phát hiện liên kết Google Drive: Đang mở công cụ Tải Google Drive trực tiếp...")
+                self._on_gdrive_download_clicked(initial_url=source)
+                return
 
         if not source:
             self._log_msg("❌ Lỗi: Vui lòng chọn file video hoặc dán link online.")
@@ -1819,6 +2028,8 @@ class AppWindow(_BaseWindow):
                 self.btn_extract_audio.configure(state="disabled")
             if hasattr(self, "btn_separate_audio"):
                 self.btn_separate_audio.configure(state="disabled")
+            if hasattr(self, "btn_gdrive"):
+                self.btn_gdrive.configure(state="disabled")
         except Exception:
             pass
 
@@ -1865,6 +2076,10 @@ class AppWindow(_BaseWindow):
             if clean_url:
                 url = clean_url
                 self.url_var.set(clean_url)
+            if "drive.google.com" in url or "docs.google.com" in url:
+                self._log_msg("💡 Phát hiện liên kết Google Drive: Đang mở công cụ Tải Google Drive trực tiếp...")
+                self._on_gdrive_download_clicked(initial_url=url)
+                return
 
         if not url:
             self._log_msg("❌ Lỗi: Vui lòng dán link video (Douyin, TikTok, Facebook, YouTube...) vào ô nhập.")
@@ -1897,6 +2112,8 @@ class AppWindow(_BaseWindow):
                 self.btn_extract_audio.configure(state="disabled")
             if hasattr(self, "btn_separate_audio"):
                 self.btn_separate_audio.configure(state="disabled")
+            if hasattr(self, "btn_gdrive"):
+                self.btn_gdrive.configure(state="disabled")
         except Exception:
             pass
 
@@ -1982,6 +2199,8 @@ class AppWindow(_BaseWindow):
                 self.btn_extract_audio.configure(state="disabled")
             if hasattr(self, "btn_separate_audio"):
                 self.btn_separate_audio.configure(state="disabled")
+            if hasattr(self, "btn_gdrive"):
+                self.btn_gdrive.configure(state="disabled")
         except Exception:
             pass
 
@@ -2027,12 +2246,37 @@ class AppWindow(_BaseWindow):
 
         threading.Thread(target=run_audio_dl, daemon=True).start()
 
+    def _on_compress_images_clicked(self, initial_files=None):
+        """Mở hộp thoại nén ảnh hàng loạt thông minh."""
+        ImageCompressorDialog(self, initial_files=initial_files)
+
+    def _on_gdrive_download_clicked(self, initial_url: str = ""):
+        """Mở hộp thoại tải file và thư mục Google Drive trực tiếp (không zip)."""
+        dlg = GDriveDownloadDialog(
+            self,
+            default_output_dir=get_output_dir(self.config),
+        )
+        if initial_url:
+            dlg.url_var.set(initial_url)
+
     def _on_separate_audio_clicked(self):
         """Mở hộp thoại tùy chọn tách giọng hát (Vocal) và nhạc nền (Beat Karaoke)."""
         video_path = self.file_path_var.get().strip()
         if not video_path or not os.path.exists(video_path):
-            self._log_msg("❌ Lỗi: Vui lòng chọn một file video hoặc bài nhạc ở Tab 1 trước khi bấm tách.")
-            return
+            import tkinter.filedialog as fd
+            chosen = fd.askopenfilename(
+                parent=self,
+                title="Chọn video hoặc bài nhạc để tách beat & giọng hát",
+                filetypes=[
+                    ("Video / Âm thanh", "*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.m4a *.flac"),
+                    ("Tất cả tệp", "*.*"),
+                ],
+            )
+            if not chosen:
+                return
+            video_path = chosen
+            self.file_path_var.set(video_path)
+            self._update_action_button()
 
         from core.audio_separator import check_demucs_installed
         ok, msg = check_demucs_installed()
@@ -2061,6 +2305,8 @@ class AppWindow(_BaseWindow):
             self.btn_extract_audio.configure(state="disabled")
         if hasattr(self, "btn_separate_audio"):
             self.btn_separate_audio.configure(state="disabled")
+        if hasattr(self, "btn_gdrive"):
+            self.btn_gdrive.configure(state="disabled")
         try:
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
@@ -2152,6 +2398,8 @@ class AppWindow(_BaseWindow):
             self.btn_extract_audio.configure(state="disabled")
         if hasattr(self, "btn_separate_audio"):
             self.btn_separate_audio.configure(state="disabled")
+        if hasattr(self, "btn_gdrive"):
+            self.btn_gdrive.configure(state="disabled")
         try:
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
@@ -2252,6 +2500,8 @@ class AppWindow(_BaseWindow):
             self.btn_extract_audio.configure(state="disabled")
         if hasattr(self, "btn_separate_audio"):
             self.btn_separate_audio.configure(state="disabled")
+        if hasattr(self, "btn_gdrive"):
+            self.btn_gdrive.configure(state="disabled")
         try:
             self.tabview.configure(state="disabled")
             self.seg_url_mode.configure(state="disabled")
@@ -2537,6 +2787,8 @@ class AppWindow(_BaseWindow):
                             self.btn_extract_audio.configure(state="normal")
                         if hasattr(self, "btn_separate_audio"):
                             self.btn_separate_audio.configure(state="normal")
+                        if hasattr(self, "btn_gdrive"):
+                            self.btn_gdrive.configure(state="normal")
                     except Exception:
                         pass
                     self.pipeline = None

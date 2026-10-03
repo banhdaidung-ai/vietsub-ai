@@ -22,6 +22,13 @@ hiddenimports = [
     'core.pipeline',
     'core.tts_generator',
     'core.gemini_processor',
+    'core.image_compressor',
+    'gui.image_compressor_dialog',
+    'gui.home_view',
+    'core.gdrive_downloader',
+    'core.gdrive_auth',
+    'gui.gdrive_download_dialog',
+    'gui.gdrive_auth_dialog',
 ]
 
 for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 'tkinterdnd2', 'demucs', 'julius', 'lameenc', 'sphn', 'safetensors', 'einops', 'playwright']:
@@ -33,8 +40,8 @@ for pkg in ['customtkinter', 'edge_tts', 'google.genai', 'yt_dlp', 'curl_cffi', 
     except Exception:
         pass
 
-# Đảm bảo metadata của curl_cffi và playwright luôn có mặt để importlib.metadata không bị lỗi
-for meta_pkg in ['curl_cffi', 'playwright']:
+# Đảm bảo metadata của curl_cffi, playwright và gdown luôn có mặt để importlib.metadata không bị lỗi
+for meta_pkg in ['curl_cffi', 'playwright', 'gdown']:
     try:
         datas += copy_metadata(meta_pkg)
     except Exception:

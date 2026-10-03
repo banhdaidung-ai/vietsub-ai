@@ -18,7 +18,7 @@ if sys.stderr is None:
     except Exception:
         pass
 
-# Vá lỗi PackageNotFoundError cho curl_cffi khi đóng gói PyInstaller trên Windows
+# Vá lỗi PackageNotFoundError cho curl_cffi, gdown và các thư viện khi đóng gói PyInstaller
 try:
     import importlib.metadata as _meta
     _orig_meta = _meta.metadata
@@ -27,18 +27,19 @@ try:
     def _safe_metadata(name: str):
         try:
             return _orig_meta(name)
-        except _meta.PackageNotFoundError:
-            if name and name.lower().replace("-", "_") == "curl_cffi":
-                return {"Summary": "curl_cffi", "Version": "0.16.3", "Name": "curl_cffi"}
-            raise
+        except Exception:
+            pkg_name = (name or "unknown").lower().replace("-", "_")
+            return {"Summary": pkg_name, "Version": "1.0.0", "Name": pkg_name}
 
     def _safe_version(name: str):
         try:
             return _orig_ver(name)
-        except _meta.PackageNotFoundError:
+        except Exception:
             if name and name.lower().replace("-", "_") == "curl_cffi":
                 return "0.16.3"
-            raise
+            if name and name.lower().replace("-", "_") == "gdown":
+                return "5.2.0"
+            return "1.0.0"
 
     _meta.metadata = _safe_metadata
     _meta.version = _safe_version
