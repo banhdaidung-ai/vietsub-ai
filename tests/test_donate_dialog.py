@@ -62,11 +62,13 @@ def test_home_view_donate_button_callback():
 
 
 def test_app_window_has_donate_support():
-    """Kiểm tra AppWindow có phương thức _open_donate_dialog và kết nối vào HomeView."""
+    """Kiểm tra AppWindow có phương thức _open_donate_dialog, kết nối HomeView và khối Sidebar Donate Card."""
     app = AppWindow()
     app.withdraw()
 
     assert hasattr(app, "_open_donate_dialog")
+    assert hasattr(app, "sidebar_donate_card")
+    assert app.sidebar_donate_card.winfo_exists()
     assert app.home_view.on_donate == app._open_donate_dialog
 
     app.destroy()

@@ -288,6 +288,90 @@ class AppWindow(_BaseWindow):
             btn.pack(fill="x", padx=8, pady=2)
             self._sidebar_buttons[key] = btn
 
+        # ── Khối QR "Mời Tác Giả Cà Phê" trên Sidebar ──
+        try:
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                _qr_p = Path(sys._MEIPASS) / "assets" / "donate_qr.png"
+            else:
+                _qr_p = Path(__file__).resolve().parent.parent / "assets" / "donate_qr.png"
+            if _qr_p.exists():
+                _pil_qr = Image.open(_qr_p).resize((118, 118), Image.Resampling.LANCZOS)
+                self._sidebar_qr_img = ctk.CTkImage(light_image=_pil_qr, dark_image=_pil_qr, size=(118, 118))
+            else:
+                self._sidebar_qr_img = None
+        except Exception:
+            self._sidebar_qr_img = None
+
+        self.sidebar_donate_card = ctk.CTkFrame(
+            self.sidebar_menu_container,
+            fg_color="#181A20",
+            corner_radius=12,
+            border_width=1,
+            border_color="#5E4324",
+            cursor="pointinghand",
+        )
+        self.sidebar_donate_card.pack(fill="x", padx=10, pady=(10, 4))
+
+        lbl_donate_title = ctk.CTkLabel(
+            self.sidebar_donate_card,
+            text="☕ Mời Tác Giả Cà Phê",
+            font=("Arial", 11, "bold"),
+            text_color="#FFB340",
+            cursor="pointinghand",
+        )
+        lbl_donate_title.pack(pady=(8, 4))
+
+        qr_box = ctk.CTkFrame(
+            self.sidebar_donate_card,
+            fg_color="#FFFFFF",
+            corner_radius=8,
+            cursor="pointinghand",
+        )
+        qr_box.pack(pady=(0, 4))
+
+        if self._sidebar_qr_img:
+            lbl_qr_preview = ctk.CTkLabel(
+                qr_box,
+                image=self._sidebar_qr_img,
+                text="",
+                cursor="pointinghand",
+            )
+        else:
+            lbl_qr_preview = ctk.CTkLabel(
+                qr_box,
+                text="[QR VIB]",
+                font=("Arial", 10, "bold"),
+                text_color="#141518",
+                width=118,
+                height=118,
+                cursor="pointinghand",
+            )
+        lbl_qr_preview.pack(padx=5, pady=5)
+
+        lbl_donate_hint = ctk.CTkLabel(
+            self.sidebar_donate_card,
+            text="👆 Bấm xem STK & sao chép",
+            font=("Arial", 9),
+            text_color=TEXT_SECONDARY,
+            cursor="pointinghand",
+        )
+        lbl_donate_hint.pack(pady=(0, 7))
+
+        # Hiệu ứng hover và sự kiện click mở popup Donate đầy đủ
+        for _w in [self.sidebar_donate_card, lbl_donate_title, qr_box, lbl_qr_preview, lbl_donate_hint]:
+            _w.bind("<Button-1>", lambda e: self._open_donate_dialog())
+
+        def _on_donate_enter(e):
+            if hasattr(self, "sidebar_donate_card") and self.sidebar_donate_card.winfo_exists():
+                self.sidebar_donate_card.configure(border_color="#FF9F0A", fg_color="#221C16")
+
+        def _on_donate_leave(e):
+            if hasattr(self, "sidebar_donate_card") and self.sidebar_donate_card.winfo_exists():
+                self.sidebar_donate_card.configure(border_color="#5E4324", fg_color="#181A20")
+
+        self.sidebar_donate_card.bind("<Enter>", _on_donate_enter)
+        self.sidebar_donate_card.bind("<Leave>", _on_donate_leave)
+
         # ── Bottom System Health & Controls in Sidebar ──
         sidebar_bottom = ctk.CTkFrame(self.sidebar_card, fg_color="transparent")
         sidebar_bottom.grid(row=3, column=0, sticky="ew", padx=10, pady=(4, 12))
