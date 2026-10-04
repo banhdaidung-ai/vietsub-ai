@@ -146,11 +146,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.3.1' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.1 — Hotfix Windows Cursor' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.1 — Nâng Cấp Tải TikTok & Hotfix Windows Cursor' }}
           body: |
-            ## 🔧 Vietsub AI v1.3.1 — Hotfix Windows Cursor
+            ## 🔧 Vietsub AI v1.3.1 — Nâng Cấp Bộ Nạp TikTok Không Watermark & Hotfix Windows Cursor
 
-            ### Sửa lỗi
+            ### Sửa lỗi & Nâng cấp mới:
+            - **🎵 Bộ nạp video TikTok chuyên dụng mới (No Watermark):**
+              - Khắc phục triệt để lỗi `No video formats found!` từ TikTok Web do lớp bảo vệ bot mới của TikTok.
+              - Tự động bóc tách luồng video gốc chất lượng cao nhất (Full HD / 1080p), sạch sẽ không dính logo watermark.
+              - Hỗ trợ giải mã mọi liên kết: link trực tiếp, link rút gọn (`vt.tiktok.com`, `vm.tiktok.com`, `tiktok.com/t/...`), văn bản chia sẻ kèm ký tự `@`.
+              - Hỗ trợ trích xuất riêng bài nhạc nền gốc `.mp3` cho tính năng lồng tiếng / dịch thuật.
             - **🪟 Fix lỗi crash trên Windows:** Thay thế cursor `pointinghand` (chỉ hoạt động trên macOS) bằng `hand2` tương thích đa nền tảng (Windows, macOS, Linux). Lỗi `_tkinter.TclError: bad cursor spec "pointinghand"` đã được khắc phục hoàn toàn.
 
             ---

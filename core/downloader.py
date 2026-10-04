@@ -137,6 +137,25 @@ class VideoDownloader:
                     raise
                 self._report(0.06, f"Bộ nạp Douyin chuyên biệt gặp trở ngại: {dy_err}. Thử qua phương thức dự phòng...")
 
+        # ── HỖ TRỢ CHUYÊN BIỆT: TikTok không watermark (TikWM engine) ──
+        if "tiktok.com" in url_clean.lower():
+            try:
+                from core.tiktok_downloader import TikTokDownloader
+                if TikTokDownloader.is_tiktok_url(url_clean):
+                    tiktok_dl = TikTokDownloader()
+                    self._downloaded_path = tiktok_dl.download_video(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        quality=quality,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+            except Exception as tt_err:
+                if isinstance(tt_err, InterruptedError):
+                    raise
+                self._report(0.06, f"Bộ nạp TikTok chuyên biệt gặp trở ngại: {tt_err}. Thử qua phương thức dự phòng...")
+
         # ── HỖ TRỢ CHUYÊN BIỆT: Xiaohongshu (小红书 / XHS) ──
         from core.xhs_downloader import XHSDownloader
         if XHSDownloader.is_xhs_url(url_clean):
@@ -259,6 +278,23 @@ class VideoDownloader:
                     raise InterruptedError("Tiến trình tải đã bị hủy.")
                 except Exception as xhs_err:
                     raise RuntimeError(str(xhs_err))
+            elif "tiktok.com" in url_clean.lower():
+                try:
+                    self._report(0.05, "Đang thử phương thức tải dự phòng TikTok chuyên dụng...")
+                    from core.tiktok_downloader import TikTokDownloader
+                    tiktok_dl = TikTokDownloader()
+                    self._downloaded_path = tiktok_dl.download_video(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        quality=quality,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+                except (InterruptedError, KeyboardInterrupt):
+                    raise InterruptedError("Tiến trình tải đã bị hủy.")
+                except Exception as tt_err:
+                    raise RuntimeError(str(tt_err))
             elif "Unsupported URL" in err_msg:
                 # Trích xuất tên domain để thông báo rõ ràng hơn
                 domain_match = re.search(r"https?://([^/\s]+)", err_msg)
@@ -467,6 +503,24 @@ class VideoDownloader:
                 if isinstance(dy_err, InterruptedError):
                     raise
                 self._report(0.06, f"Bộ nạp Douyin Audio thông báo: {dy_err}. Thử qua phương thức dự phòng...")
+
+        # ── 0.1 HỖ TRỢ CHUYÊN BIỆT: TikTok Audio ──
+        if "tiktok.com" in url_clean.lower():
+            try:
+                from core.tiktok_downloader import TikTokDownloader
+                if TikTokDownloader.is_tiktok_url(url_clean):
+                    tiktok_dl = TikTokDownloader()
+                    self._downloaded_path = tiktok_dl.download_audio(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+            except Exception as tt_err:
+                if isinstance(tt_err, InterruptedError):
+                    raise
+                self._report(0.06, f"Bộ nạp âm thanh TikTok thông báo: {tt_err}. Thử qua phương thức dự phòng...")
 
         # ── 1. HỖ TRỢ CHUYÊN BIỆT: Epidemic Sound (www.epidemicsound.com) ──
         if "epidemicsound.com" in url_clean.lower() and "audiocdn.epidemicsound.com" not in url_clean:
@@ -707,6 +761,21 @@ class VideoDownloader:
             raise InterruptedError("Tiến trình tải đã bị hủy.")
         except Exception as e:
             err_msg = str(e)
+            if "tiktok.com" in url_clean.lower():
+                try:
+                    from core.tiktok_downloader import TikTokDownloader
+                    tiktok_dl = TikTokDownloader()
+                    self._downloaded_path = tiktok_dl.download_audio(
+                        raw_url=url_clean,
+                        output_dir=output_dir,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    return self._downloaded_path
+                except (InterruptedError, KeyboardInterrupt):
+                    raise InterruptedError("Tiến trình tải đã bị hủy.")
+                except Exception:
+                    pass
             if any(d in url_clean.lower() for d in ("instagram.com", "instagr.am")):
                 if any(k in err_msg.lower() for k in ("login", "rate-limit", "redirect", "empty media", "restricted", "private")):
                     raise RuntimeError(

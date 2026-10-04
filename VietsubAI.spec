@@ -17,6 +17,7 @@ hiddenimports = [
     'pydantic.deprecated.decorator',
     # Core modules - đảm bảo luôn được đóng gói
     'core.xhs_downloader',
+    'core.tiktok_downloader',
     'core.downloader',
     'core.douyin',
     'core.pipeline',
