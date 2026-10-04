@@ -186,7 +186,7 @@ class HomeView(ctk.CTkScrollableFrame):
                 border_color="#5E4324",
                 height=28,
                 corner_radius=8,
-                cursor="pointinghand",
+                cursor="hand2",
                 command=self.on_donate,
             ).pack(side="left", padx=4)
 

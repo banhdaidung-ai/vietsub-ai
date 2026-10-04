@@ -308,7 +308,7 @@ class AppWindow(_BaseWindow):
             corner_radius=12,
             border_width=1,
             border_color="#5E4324",
-            cursor="pointinghand",
+            cursor="hand2",
         )
         self.sidebar_donate_card.pack(fill="x", padx=10, pady=(10, 4))
 
@@ -317,7 +317,7 @@ class AppWindow(_BaseWindow):
             text="☕ Mời Tác Giả Cà Phê",
             font=("Arial", 11, "bold"),
             text_color="#FFB340",
-            cursor="pointinghand",
+            cursor="hand2",
         )
         lbl_donate_title.pack(pady=(8, 4))
 
@@ -325,7 +325,7 @@ class AppWindow(_BaseWindow):
             self.sidebar_donate_card,
             fg_color="#FFFFFF",
             corner_radius=8,
-            cursor="pointinghand",
+            cursor="hand2",
         )
         qr_box.pack(pady=(0, 4))
 
@@ -334,7 +334,7 @@ class AppWindow(_BaseWindow):
                 qr_box,
                 image=self._sidebar_qr_img,
                 text="",
-                cursor="pointinghand",
+                cursor="hand2",
             )
         else:
             lbl_qr_preview = ctk.CTkLabel(
@@ -344,7 +344,7 @@ class AppWindow(_BaseWindow):
                 text_color="#141518",
                 width=118,
                 height=118,
-                cursor="pointinghand",
+                cursor="hand2",
             )
         lbl_qr_preview.pack(padx=5, pady=5)
 
@@ -353,7 +353,7 @@ class AppWindow(_BaseWindow):
             text="👆 Bấm xem STK & sao chép",
             font=("Arial", 9),
             text_color=TEXT_SECONDARY,
-            cursor="pointinghand",
+            cursor="hand2",
         )
         lbl_donate_hint.pack(pady=(0, 7))
 
