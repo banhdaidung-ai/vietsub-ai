@@ -305,6 +305,8 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._preview_show_original = False
         self._preview_photo    = None   # CTkImage cho preview
         self._preview_job      = None   # After job debounce ID
+        self._preview_zoom_factor = 1.0 # 1.0 = Fit vừa vặn khung nhìn
+        self._preview_zoom_var = ctk.DoubleVar(value=1.0)
 
         self._build_ui()
         self._setup_dnd()
@@ -751,7 +753,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             sidebar, fg_color="#090A0D", corner_radius=10,
             border_width=1, border_color="#1F232D"
         )
-        view_card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
+        self._preview_view_card = view_card
+        view_card.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 6))
+        view_card.grid_propagate(False)
         view_card.grid_columnconfigure(0, weight=1)
         view_card.grid_rowconfigure(0, weight=1)
 
@@ -763,11 +767,68 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             anchor="center",
         )
         self._preview_label.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        view_card.bind("<Configure>", self._on_view_card_resize)
+
+        # ── Thanh Điều Chỉnh Kích Thước / Thu Phóng Preview ──
+        zoom_bar = ctk.CTkFrame(sidebar, fg_color=BG_INSET, corner_radius=8,
+                                border_width=1, border_color=BORDER_INSET)
+        zoom_bar.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
+        zoom_bar.grid_columnconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            zoom_bar, text="🔍", font=("Arial", 11), text_color=TEXT_TERTIARY
+        ).grid(row=0, column=0, padx=(8, 2), pady=4)
+
+        self._btn_zoom_out = ctk.CTkButton(
+            zoom_bar, text="➖", width=26, height=24, corner_radius=5,
+            fg_color=BG_PILL, hover_color=BG_PILL_HOV, text_color=TEXT_PRIMARY,
+            font=("Arial", 10, "bold"),
+            command=self._zoom_out,
+        )
+        self._btn_zoom_out.grid(row=0, column=1, padx=2, pady=4)
+
+        self._zoom_slider = ctk.CTkSlider(
+            zoom_bar, from_=0.3, to=2.0, number_of_steps=34,
+            variable=self._preview_zoom_var, height=14,
+            progress_color=APPLE_CYAN, button_color=APPLE_CYAN,
+            command=self._on_zoom_slider,
+        )
+        self._zoom_slider.grid(row=0, column=2, sticky="ew", padx=4, pady=4)
+
+        self._btn_zoom_in = ctk.CTkButton(
+            zoom_bar, text="➕", width=26, height=24, corner_radius=5,
+            fg_color=BG_PILL, hover_color=BG_PILL_HOV, text_color=TEXT_PRIMARY,
+            font=("Arial", 10, "bold"),
+            command=self._zoom_in,
+        )
+        self._btn_zoom_in.grid(row=0, column=3, padx=2, pady=4)
+
+        self._lbl_zoom_val = ctk.CTkLabel(
+            zoom_bar, text="Fit", font=("Consolas", 10, "bold"),
+            text_color=APPLE_CYAN, width=38,
+        )
+        self._lbl_zoom_val.grid(row=0, column=4, padx=2, pady=4)
+
+        self._btn_zoom_fit = ctk.CTkButton(
+            zoom_bar, text="Vừa Khung", width=70, height=24, corner_radius=5,
+            fg_color=BG_PILL, hover_color=BG_PILL_HOV, text_color=APPLE_CYAN,
+            font=("Arial", 10, "bold"),
+            command=self._zoom_fit,
+        )
+        self._btn_zoom_fit.grid(row=0, column=5, padx=(2, 4), pady=4)
+
+        self._btn_zoom_100 = ctk.CTkButton(
+            zoom_bar, text="100%", width=44, height=24, corner_radius=5,
+            fg_color=BG_PILL, hover_color=BG_PILL_HOV, text_color=TEXT_PRIMARY,
+            font=("Arial", 10, "bold"),
+            command=lambda: self._zoom_to(1.0),
+        )
+        self._btn_zoom_100.grid(row=0, column=6, padx=(0, 6), pady=4)
 
         # ── Footer Info & Batch Navigation ──
         foot_bar = ctk.CTkFrame(sidebar, fg_color=BG_INSET, corner_radius=8,
                                 border_width=1, border_color=BORDER_INSET)
-        foot_bar.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
+        foot_bar.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
         foot_bar.grid_columnconfigure(1, weight=1)
 
         # Nút Previous
@@ -1482,9 +1543,10 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             from PIL import ImageOps as _IOS
             img = _IOS.exif_transpose(img)
             self._cached_orig_size = img.size
-            # Max viewport kích thước lớn 470 x 620
-            img.thumbnail((470, 620), Image.BILINEAR)
-            self._cached_preview_thumb = img
+            # Cache bản độ phân giải cao (1200x1200) để khi zoom không vỡ nét
+            base = img.copy()
+            base.thumbnail((1200, 1200), Image.LANCZOS)
+            self._cached_preview_thumb = base
             self._cached_preview_src = src
         except Exception:
             self._cached_preview_thumb = None
@@ -1502,6 +1564,8 @@ class ImageCompressorDialog(ctk.CTkToplevel):
                 text="Chưa có ảnh.\n\nKéo & thả hoặc bấm '📂 Thêm Ảnh'\nđể xem trước logo và mã sản phẩm tại đây."
             )
             self._preview_info_lbl.configure(text="Chưa nạp ảnh")
+            if hasattr(self, "_lbl_zoom_val"):
+                self._lbl_zoom_val.configure(text="Fit")
             return
 
         self._prepare_preview_base(force=force_reload)
@@ -1515,10 +1579,41 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         import time
         t0 = time.time()
 
+        # Tính toán kích thước hiển thị chính xác theo Viewport và Tỉ lệ Zoom
+        orig_w, orig_h = getattr(self, "_cached_orig_size", self._cached_preview_thumb.size)
+        if orig_w <= 0 or orig_h <= 0:
+            orig_w, orig_h = self._cached_preview_thumb.size
+
+        # Kích thước viewport khả dụng thực tế của view_card
+        card_w = 376
+        card_h = 480
+        if hasattr(self, "_preview_view_card"):
+            try:
+                cw = self._preview_view_card.winfo_width() - 20
+                ch = self._preview_view_card.winfo_height() - 20
+                if cw > 150:
+                    card_w = cw
+                if ch > 150:
+                    card_h = ch
+            except Exception:
+                pass
+
+        # Tính kích thước Fit vừa vặn 100% trong khung (không tràn viền, không xén mép)
+        fit_scale = min(card_w / orig_w, card_h / orig_h)
+        base_fit_w = max(10, int(orig_w * fit_scale))
+        base_fit_h = max(10, int(orig_h * fit_scale))
+
+        zoom = getattr(self, "_preview_zoom_factor", 1.0)
+        target_w = max(10, int(base_fit_w * zoom))
+        target_h = max(10, int(base_fit_h * zoom))
+
+        work_img = self._cached_preview_thumb.copy()
+        work_img.thumbnail((target_w, target_h), Image.BILINEAR)
+
         if self._preview_show_original or cfg is None:
-            result = self._cached_preview_thumb.copy()
+            result = work_img
         else:
-            result = apply_watermark(self._cached_preview_thumb.copy(), cfg, src)
+            result = apply_watermark(work_img, cfg, src)
 
         elapsed_ms = max(1, int((time.time() - t0) * 1000))
 
@@ -1532,14 +1627,55 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             total = len(self._image_paths)
             idx_display = self._current_preview_index + 1
             name = os.path.basename(src)
-            orig_w, orig_h = getattr(self, "_cached_orig_size", (w, h))
+            zoom_pct = int(zoom * 100)
+            zoom_str = "Vừa khung" if abs(zoom - 1.0) < 0.02 else f"{zoom_pct}%"
             mode_str = " (Ảnh gốc)" if self._preview_show_original else ""
             self._preview_info_lbl.configure(
-                text=f"[{idx_display}/{total}] {name} • {orig_w}×{orig_h} • ⚡{elapsed_ms}ms{mode_str}"
+                text=f"[{idx_display}/{total}] {name} • {orig_w}×{orig_h} • {zoom_str} • ⚡{elapsed_ms}ms{mode_str}"
             )
+            if hasattr(self, "_lbl_zoom_val"):
+                self._lbl_zoom_val.configure(text=f"{zoom_pct}%" if abs(zoom - 1.0) >= 0.02 else "Fit")
             self._update_filename_hint()
         except Exception as exc:
             self._preview_label.configure(text=f"⚠️ Hiển thị lỗi: {exc}", image=None)
+
+    def _zoom_to(self, factor: float):
+        """Đặt tỉ lệ thu phóng xem trước ảnh."""
+        factor = max(0.3, min(2.0, factor))
+        self._preview_zoom_factor = factor
+        if hasattr(self, "_preview_zoom_var"):
+            self._preview_zoom_var.set(factor)
+        if hasattr(self, "_lbl_zoom_val"):
+            pct = int(factor * 100)
+            self._lbl_zoom_val.configure(text=f"{pct}%" if abs(factor - 1.0) >= 0.02 else "Fit")
+        self._refresh_preview()
+
+    def _zoom_in(self):
+        """Phóng to thêm 15%."""
+        curr = getattr(self, "_preview_zoom_factor", 1.0)
+        self._zoom_to(round(curr + 0.15, 2))
+
+    def _zoom_out(self):
+        """Thu nhỏ bớt 15%."""
+        curr = getattr(self, "_preview_zoom_factor", 1.0)
+        self._zoom_to(round(curr - 0.15, 2))
+
+    def _zoom_fit(self):
+        """Đặt lại kích thước vừa vặn hoàn hảo trong khung."""
+        self._zoom_to(1.0)
+
+    def _on_zoom_slider(self, val):
+        """Bắt sự kiện trượt thanh zoom."""
+        self._preview_zoom_factor = float(val)
+        if hasattr(self, "_lbl_zoom_val"):
+            pct = int(float(val) * 100)
+            self._lbl_zoom_val.configure(text=f"{pct}%" if abs(float(val) - 1.0) >= 0.02 else "Fit")
+        self._schedule_preview()
+
+    def _on_view_card_resize(self, event):
+        """Tự động điều chỉnh tỉ lệ vừa khung khi kích thước cửa sổ thay đổi."""
+        if getattr(self, "_preview_zoom_factor", 1.0) == 1.0 and getattr(self, "_cached_preview_thumb", None) is not None:
+            self._schedule_preview()
 
     def _prev_preview_image(self):
         """Chuyển sang xem trước ảnh phía trước trong batch."""
@@ -1589,7 +1725,8 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         fmt_raw = self._fmt_var.get()
         fmt = "auto" if fmt_raw == "Tự động" else fmt_raw
 
-        suffix = "_compressed" if compress_on else "_watermarked"
+        # Giữ nguyên 100% tên file gốc khi xuất file theo yêu cầu
+        suffix = ""
         tasks = [
             CompressTask(
                 src_path=p,

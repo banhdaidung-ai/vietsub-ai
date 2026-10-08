@@ -139,8 +139,12 @@ def test_compressed_mode_targets_size(sample_image):
 
 
 def test_build_output_path_suffixes():
-    """Kiểm tra đường dẫn file xuất với các hậu tố _compressed và _watermarked."""
+    """Kiểm tra đường dẫn file xuất: mặc định giữ nguyên tên file gốc, và hỗ trợ suffix khi truyền vào."""
     out_dir = "/tmp/test_export"
+    # Mặc định không truyền suffix -> giữ nguyên tên file gốc
+    p_default = build_output_path("/photos/sample.jpg", out_dir)
+    assert p_default == "/tmp/test_export/sample.jpg"
+
     p_comp = build_output_path("/photos/sample.jpg", out_dir, "_compressed")
     assert p_comp == "/tmp/test_export/sample_compressed.jpg"
 
@@ -201,6 +205,9 @@ def test_dialog_defaults_and_responsiveness():
     assert hasattr(dlg, "_time_badge"), "Phải có huy hiệu hiển thị thời gian khi chạy nén"
     assert hasattr(dlg, "_scroll_content"), "Phải có CTkScrollableFrame chống che lấp khi thu nhỏ"
     assert hasattr(dlg, "_btn_start"), "Phải có nút Bắt đầu nén"
+    assert hasattr(dlg, "_zoom_slider"), "Phải có thanh trượt điều chỉnh kích thước preview"
+    assert hasattr(dlg, "_btn_zoom_fit"), "Phải có nút Vừa Khung preview"
+    assert hasattr(dlg, "_preview_zoom_var"), "Phải có biến lưu tỉ lệ zoom preview"
 
     # Kiểm tra nút luôn nằm trong khung nhìn của cửa sổ ngay cả ở kích thước nhỏ 700px
     dlg.state("normal")

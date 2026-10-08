@@ -394,6 +394,16 @@ def _scale_down_to_target(
     return resized2, result_bytes2
 
 
+def _safe_write_file(dst_path: str, data: bytes):
+    """Ghi dữ liệu ra tệp an toàn (qua file tạm atomic) tránh xung đột khi ghi đè cùng file."""
+    p = Path(dst_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = p.with_name(f".tmp_{p.name}")
+    with open(tmp_path, "wb") as f:
+        f.write(data)
+    os.replace(tmp_path, p)
+
+
 def _compress_single(task: CompressTask) -> CompressResult:
     """
     Nén một ảnh về dung lượng mục tiêu (KB).
@@ -465,9 +475,7 @@ def _compress_single(task: CompressTask) -> CompressResult:
         if not task.compress_enabled:
             is_lossless = (fmt in ("PNG", "WEBP"))
             result_bytes = _encode_to_bytes(img, fmt, quality=100 if is_lossless else 98, exif_bytes=exif_bytes, lossless=is_lossless)
-            Path(final_dst_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(final_dst_path, "wb") as f:
-                f.write(result_bytes)
+            _safe_write_file(final_dst_path, result_bytes)
             dst_size_kb = os.path.getsize(final_dst_path) / 1024.0
             return CompressResult(
                 src_path=task.src_path, dst_path=final_dst_path,
@@ -485,9 +493,7 @@ def _compress_single(task: CompressTask) -> CompressResult:
                 result_bytes = _encode_to_bytes(img, fmt, 100, exif_bytes, lossless=True, method=4)
             else:
                 result_bytes = _encode_to_bytes(img, fmt, quality=95, exif_bytes=exif_bytes)
-            Path(final_dst_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(final_dst_path, "wb") as f:
-                f.write(result_bytes)
+            _safe_write_file(final_dst_path, result_bytes)
             dst_size_kb = os.path.getsize(final_dst_path) / 1024.0
             return CompressResult(
                 src_path=task.src_path, dst_path=final_dst_path,
@@ -501,9 +507,7 @@ def _compress_single(task: CompressTask) -> CompressResult:
         if fmt == "WEBP" and (src_size_kb <= task.target_kb * 1.25):
             lossless_bytes = _encode_to_bytes(img, fmt, 100, exif_bytes, lossless=True, method=4)
             if len(lossless_bytes) <= target_bytes:
-                Path(final_dst_path).parent.mkdir(parents=True, exist_ok=True)
-                with open(final_dst_path, "wb") as f:
-                    f.write(lossless_bytes)
+                _safe_write_file(final_dst_path, lossless_bytes)
                 dst_size_kb = os.path.getsize(final_dst_path) / 1024.0
                 return CompressResult(
                     src_path=task.src_path, dst_path=final_dst_path,
@@ -546,9 +550,7 @@ def _compress_single(task: CompressTask) -> CompressResult:
             )
             width, height = img.size
 
-        Path(final_dst_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(final_dst_path, "wb") as f:
-            f.write(best_result_bytes)
+        _safe_write_file(final_dst_path, best_result_bytes)
 
         dst_size_kb = os.path.getsize(final_dst_path) / 1024.0
         return CompressResult(
@@ -695,7 +697,7 @@ def scan_images(paths: List[str]) -> List[str]:
 def build_output_path(
     src: str,
     output_dir: str,
-    suffix: str = "_compressed",
+    suffix: str = "",
     output_format: str = "auto",
 ) -> str:
     """Tạo đường dẫn file đầu ra theo định dạng được chọn."""

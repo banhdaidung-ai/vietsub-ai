@@ -146,11 +146,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.3.1' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.1 — Nâng Cấp Tải TikTok & Hotfix Windows Cursor' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.1 — Cập Nhật Nén Ảnh, Nâng Cấp Tải TikTok & Hotfix Windows' }}
           body: |
-            ## 🔧 Vietsub AI v1.3.1 — Nâng Cấp Bộ Nạp TikTok Không Watermark & Hotfix Windows Cursor
+            ## 🔧 Vietsub AI v1.3.1 — Cập Nhật Nén Ảnh, Nâng Cấp Tải TikTok & Hotfix Windows
 
-            ### Sửa lỗi & Nâng cấp mới:
+            ### Sửa lỗi & Nâng cấp mới nhất:
+            - **🖼️ Nâng cấp Xem Trước (Preview) & Xuất File Ảnh Thông Minh:**
+              - Khắc phục triệt để lỗi hiển thị sai kích thước ảnh trong Preview: tự động căn chỉnh vừa vặn hoàn hảo (`Fit to Viewport`), không còn bị tràn viền hay xén mất watermark cạnh phải và góc dưới.
+              - Bổ sung thanh công cụ **Thu phóng / Điều chỉnh kích thước Preview**: Thanh trượt Zoom mượt mà (30% - 200%), nút `Vừa Khung`, nút `100%`, nút `➖` / `➕`.
+              - **Bảo toàn tên file gốc khi xuất:** Loại bỏ hoàn toàn hậu tố tự sinh `_compressed` / `_watermarked`, giữ nguyên 100% tên file gốc khi xuất ảnh.
             - **🎵 Bộ nạp video TikTok chuyên dụng mới (No Watermark):**
               - Khắc phục triệt để lỗi `No video formats found!` từ TikTok Web do lớp bảo vệ bot mới của TikTok.
               - Tự động bóc tách luồng video gốc chất lượng cao nhất (Full HD / 1080p), sạch sẽ không dính logo watermark.
