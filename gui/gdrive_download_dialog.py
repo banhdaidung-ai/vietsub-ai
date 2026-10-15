@@ -85,7 +85,11 @@ class GDriveCompletionModal(ctk.CTkToplevel):
 
         self.out_dir = out_dir
 
-        self.transient(parent)
+        top = parent.winfo_toplevel() if hasattr(parent, "winfo_toplevel") else parent
+        try:
+            self.transient(top)
+        except Exception:
+            pass
         self.lift()
         self.grab_set()
         self.focus_force()
@@ -825,3 +829,69 @@ class GDriveDownloadDialog(ctk.CTkToplevel):
             self.geometry(f"+{max(0, x)}+{max(0, y)}")
         except Exception:
             pass
+
+
+# ─────────────────────────────────────────────────────────────
+# GDrive Download View Nhúng Trực Tiếp Vào App Chính
+# ─────────────────────────────────────────────────────────────
+
+class GDriveDownloadView(ctk.CTkFrame):
+    """
+    View tải Google Drive trực tiếp nhúng thẳng vào Main Canvas của AppWindow.
+    Kế thừa CTkFrame thay vì CTkToplevel nên không mở cửa sổ pop-up rời rạc.
+    """
+
+    def __init__(self, master, default_output_dir: Optional[str] = None, **kwargs):
+        super().__init__(master, fg_color=BG_WINDOW, **kwargs)
+        self.master = master
+
+        # Trạng thái tiến trình
+        self._is_downloading = False
+        self._cancel_event = threading.Event()
+        self._msg_queue: queue.Queue = queue.Queue()
+        self._download_thread: Optional[threading.Thread] = None
+
+        # Thiết lập thư mục lưu mặc định
+        cfg = load_config()
+        base_dir = default_output_dir or get_output_dir(cfg)
+        self.target_dir = os.path.join(base_dir, "GDrive_Downloads")
+
+        self._build_ui()
+
+        # Tùy biến nút đóng trong view nhúng thành nút Trang Chủ
+        if hasattr(self, "btn_close"):
+            self.btn_close.configure(text="🏠 Trang Chủ", width=110)
+
+        # Bắt đầu vòng lặp đọc hàng đợi giao diện
+        self._check_queue()
+
+    # ── Tái sử dụng toàn bộ logic từ GDriveDownloadDialog ──
+    _build_ui            = GDriveDownloadDialog._build_ui
+    _refresh_auth_status = GDriveDownloadDialog._refresh_auth_status
+    _open_auth_dialog    = GDriveDownloadDialog._open_auth_dialog
+    _paste_clipboard     = GDriveDownloadDialog._paste_clipboard
+    _browse_directory    = GDriveDownloadDialog._browse_directory
+    _open_output_dir     = GDriveDownloadDialog._open_output_dir
+    _start_download      = GDriveDownloadDialog._start_download
+    _cancel_download     = GDriveDownloadDialog._cancel_download
+    _log                 = GDriveDownloadDialog._log
+    _check_queue         = GDriveDownloadDialog._check_queue
+
+    def _on_close(self):
+        """Khi bấm nút Đóng/Trang Chủ trong view nhúng -> chuyển về Trang Chủ."""
+        if hasattr(self.master, "_on_sidebar_select"):
+            self.master._on_sidebar_select("home")
+        elif hasattr(self.master, "_show_canvas_view"):
+            self.master._show_canvas_view("home")
+        else:
+            top = self.winfo_toplevel()
+            if hasattr(top, "_on_sidebar_select"):
+                top._on_sidebar_select("home")
+
+    def set_url(self, url: str):
+        """Thiết lập đường dẫn URL và tự động chọn nếu có."""
+        if hasattr(self, "url_var"):
+            self.url_var.set(url)
+        if hasattr(self, "entry_url"):
+            self.entry_url.focus()
+

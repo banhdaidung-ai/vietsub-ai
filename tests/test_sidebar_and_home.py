@@ -67,12 +67,14 @@ def test_app_window_sidebar_and_canvas():
     assert app._current_canvas_view == "vietsub"
     assert app._active_sidebar_key == "downloader"
     assert "Link Online" in app.tabview.get()
+    assert app.btn_start.cget("text") == "🚀 BẮT ĐẦU TẢI"
+    assert "Tải Video - Nhạc" in app._sidebar_buttons["downloader"].cget("text")
 
-    # Kiểm tra bấm nút gdrive từ sidebar
-    gdrive_clicked = []
-    app._on_gdrive_download_clicked = lambda: gdrive_clicked.append(True)
+    # Kiểm tra bấm nút gdrive từ sidebar chuyển sang canvas view 'gdrive'
     app._on_sidebar_select("gdrive")
-    assert len(gdrive_clicked) == 1
+    assert app._current_canvas_view == "gdrive"
+    assert app._active_sidebar_key == "gdrive"
+    assert hasattr(app, "gdrive_view")
 
     # Chuyển sang Hướng Dẫn
     app._on_sidebar_select("guide")

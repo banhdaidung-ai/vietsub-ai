@@ -146,11 +146,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.3.1' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.1 — Cập Nhật Nén Ảnh Nhúng App, Lưu Cài Đặt, Tải TikTok & Hotfix Windows' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vietsub AI {0}', github.ref_name) || 'Vietsub AI v1.3.1 — Nén Ảnh & GDrive Nhúng App, Tải Video - Nhạc, Tải TikTok & Hotfix Windows' }}
           body: |
-            ## 🔧 Vietsub AI v1.3.1 — Cập Nhật Nén Ảnh Nhúng App, Lưu Cài Đặt, Tải TikTok & Hotfix Windows
+            ## 🔧 Vietsub AI v1.3.1 — Nén Ảnh & GDrive Nhúng App, Tải Video - Nhạc, Tải TikTok & Hotfix Windows
 
             ### Sửa lỗi & Nâng cấp mới nhất:
+            - **☁️ Nâng cấp Phân Hệ Tải Google Drive Trực Tiếp:**
+              - **Nhúng trực tiếp vào App chính:** Không còn bung cửa sổ pop-up modal rời rạc; toàn bộ giao diện tải thư mục & tệp Google Drive hiển thị mượt mà trên Canvas chính, bổ sung nút `Trang Chủ` điều hướng tiện lợi.
+              - **Tự động chuyển tab & nhận diện link:** Dán hoặc kéo thả link Google Drive từ ngoài vào app sẽ tự động chuyển sang view Drive và điền link ngay lập tức.
+            - **📥 Nâng cấp Bộ Tải Video - Nhạc Online:**
+              - **Đổi tên mục thân thiện:** Đổi tên từ "Tải Media Online" thành "Tải Video - Nhạc" trên thanh Sidebar và thẻ Quick Actions Trang chủ.
+              - **Chuẩn hóa nút hành động:** Khắc phục lỗi hiển thị nhầm "BẮT ĐẦU DỊCH", đổi thành nút **"🚀 BẮT ĐẦU TẢI"** trực quan, rõ ràng.
             - **🖼️ Nâng cấp Phân Hệ Nén Ảnh Hàng Loạt:**
               - **Nhúng trực tiếp vào App chính:** Chuyển đổi giao diện nén ảnh từ cửa sổ pop-up rời thành view chính nhúng thẳng trong Canvas Studio, điều hướng mượt mà đồng bộ cùng Sidebar.
               - **Kéo thả thông minh:** Kéo thả tệp ảnh trực tiếp vào giao diện chính sẽ tự động chuyển sang tab nén ảnh và nạp tệp ngay lập tức.

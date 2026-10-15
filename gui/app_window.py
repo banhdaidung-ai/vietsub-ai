@@ -26,7 +26,7 @@ from gui.subtitle_editor_dialog import SubtitleEditorDialog
 from gui.audio_separator_dialog import AudioSeparatorDialog
 from gui.guide_view import GuideView
 from gui.home_view import HomeView
-from gui.gdrive_download_dialog import GDriveDownloadDialog
+from gui.gdrive_download_dialog import GDriveDownloadDialog, GDriveDownloadView
 from gui.image_compressor_dialog import ImageCompressorDialog, ImageCompressorView
 from gui.donate_dialog import DonateDialog
 from utils.config import get_output_dir, load_config, save_config
@@ -264,7 +264,7 @@ class AppWindow(_BaseWindow):
             ("home", "🏠", "Trang Chủ"),
             ("vietsub", "🎬", "Vietsub & Voice AI"),
             ("separator", "🎤", "Tách Beat & Lời"),
-            ("downloader", "📥", "Tải Media Online"),
+            ("downloader", "📥", "Tải Video - Nhạc"),
             ("gdrive", "☁️", "Tải Google Drive"),
             ("compressor", "🖼️", "Nén Ảnh Hàng Loạt"),
             ("sub_editor", "✏️", "Sửa Sub Phụ Đề"),
@@ -465,6 +465,10 @@ class AppWindow(_BaseWindow):
         # ── View Image Compressor (nhúng vào main canvas) ──
         self.compressor_view = ImageCompressorView(self.main_canvas)
         # Không grid lên ngay — chỉ hiển thị khi user click sidebar
+
+        # ── View GDrive Downloader (nhúng vào main canvas) ──
+        self.gdrive_view = GDriveDownloadView(self.main_canvas, default_output_dir=get_output_dir(self.config))
+        # Không grid lên ngay — chỉ hiển thị khi user click sidebar hoặc trang chủ
 
         # ── View 2: Vietsub Studio Container ──
         self.vietsub_container = ctk.CTkFrame(self.main_canvas, fg_color="transparent")
@@ -1576,6 +1580,7 @@ class AppWindow(_BaseWindow):
             if hasattr(self, "tabview"):
                 try:
                     self.tabview.set("🌐 Dán Link Online (TikTok, YouTube, Facebook...)")
+                    self._update_action_button()
                     if hasattr(self, "url_entry"):
                         self.url_entry.focus()
                 except Exception:
@@ -1619,7 +1624,7 @@ class AppWindow(_BaseWindow):
                 )
 
     def _show_canvas_view(self, view_name: str):
-        """Chuyển đổi các view trên Main Canvas: 'home', 'vietsub', 'guide', 'compressor'."""
+        """Chuyển đổi các view trên Main Canvas: 'home', 'vietsub', 'guide', 'compressor', 'gdrive'."""
         self._current_canvas_view = view_name
 
         if hasattr(self, "home_view"):
@@ -1630,6 +1635,8 @@ class AppWindow(_BaseWindow):
             self.guide_view.grid_remove()
         if hasattr(self, "compressor_view"):
             self.compressor_view.grid_remove()
+        if hasattr(self, "gdrive_view"):
+            self.gdrive_view.grid_remove()
 
         if view_name == "home":
             if hasattr(self, "home_view"):
@@ -1643,6 +1650,9 @@ class AppWindow(_BaseWindow):
         elif view_name == "compressor":
             if hasattr(self, "compressor_view"):
                 self.compressor_view.grid(row=0, column=0, sticky="nsew")
+        elif view_name == "gdrive":
+            if hasattr(self, "gdrive_view"):
+                self.gdrive_view.grid(row=0, column=0, sticky="nsew")
 
     def _switch_to_tab(self, tab_name: str):
         """Hỗ trợ tương thích ngược cho các lời gọi _switch_to_tab cũ."""
@@ -1749,7 +1759,7 @@ class AppWindow(_BaseWindow):
             mode = self.config.get("url_action_mode", "download_only")
             if mode == "download_only":
                 self.btn_start.configure(
-                    text="⬇️ TẢI VIDEO GỐC",
+                    text="🚀 BẮT ĐẦU TẢI",
                     fg_color=APPLE_GREEN,
                     hover_color="#248A3D",
                 )
@@ -2361,24 +2371,11 @@ class AppWindow(_BaseWindow):
             self.compressor_view.add_initial_files(initial_files)
 
     def _on_gdrive_download_clicked(self, initial_url: str = ""):
-        """Mở hộp thoại tải file và thư mục Google Drive trực tiếp (không zip, Singleton)."""
-        if hasattr(self, "_gdrive_download_dlg") and self._gdrive_download_dlg and self._gdrive_download_dlg.winfo_exists():
-            try:
-                self._gdrive_download_dlg.lift()
-                self._gdrive_download_dlg.focus_force()
-                if initial_url:
-                    self._gdrive_download_dlg.url_var.set(initial_url)
-                return
-            except Exception:
-                pass
-
-        dlg = GDriveDownloadDialog(
-            self,
-            default_output_dir=get_output_dir(self.config),
-        )
-        self._gdrive_download_dlg = dlg
-        if initial_url:
-            dlg.url_var.set(initial_url)
+        """Chuyển sang view tải file và thư mục Google Drive trực tiếp (nhúng trong app chính)."""
+        self._show_canvas_view("gdrive")
+        self._select_sidebar_key("gdrive")
+        if initial_url and hasattr(self, "gdrive_view"):
+            self.gdrive_view.set_url(initial_url)
 
     def _on_separate_audio_clicked(self):
         """Mở hộp thoại tùy chọn tách giọng hát (Vocal) và nhạc nền (Beat Karaoke)."""
