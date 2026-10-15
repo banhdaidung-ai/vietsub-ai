@@ -158,9 +158,10 @@ jobs:
               - **Đổi tên mục thân thiện:** Đổi tên từ "Tải Media Online" thành "Tải Video - Nhạc" trên thanh Sidebar và thẻ Quick Actions Trang chủ.
               - **Chuẩn hóa nút hành động:** Khắc phục lỗi hiển thị nhầm "BẮT ĐẦU DỊCH", đổi thành nút **"🚀 BẮT ĐẦU TẢI"** trực quan, rõ ràng.
             - **🖼️ Nâng cấp Phân Hệ Nén Ảnh Hàng Loạt:**
+              - **In-App Success Banner & Modal Nổi Bật:** Khắc phục triệt để lỗi không thấy thông báo trạng thái khi nén xong. Bổ sung Card Banner màu xanh Apple sang trọng hiển thị ngay trên bảng kết quả (tóm tắt số ảnh thành công, dung lượng tiết kiệm, thời gian, nút `Mở Thư Mục Xuất`), đồng thời nâng cấp Popup Modal hoàn tất luôn hiển thị trên cùng (topmost) không bị che khuất.
               - **Nhúng trực tiếp vào App chính:** Chuyển đổi giao diện nén ảnh từ cửa sổ pop-up rời thành view chính nhúng thẳng trong Canvas Studio, điều hướng mượt mà đồng bộ cùng Sidebar.
               - **Kéo thả thông minh:** Kéo thả tệp ảnh trực tiếp vào giao diện chính sẽ tự động chuyển sang tab nén ảnh và nạp tệp ngay lập tức.
-              - **Tự động lưu và khôi phục cài đặt:** Toàn bộ 26 thông số cấu hình nén ảnh (Preset, chất lượng WebP/JPEG, định dạng xuất, Watermark logo/text, EXIF, thư mục lưu) được tự động ghi nhớ và khôi phục chính xác khi tắt mở lại ứng dụng.
+              - **Tự động lưu & Khôi phục 100% cấu hình:** Bắt sự kiện thời gian thực khi nhập dung lượng mục tiêu, thay đổi đơn vị KB/MB, đổi format xuất, bật/tắt EXIF, thay đổi watermark sliders (tỷ lệ, độ mờ, vị trí, offset, chữ, màu sắc). Toàn bộ 26 thông số được tự động ghi nhớ và khôi phục chính xác 100% khi mở lại ứng dụng.
               - **Xem Trước (Preview) & Xuất File Ảnh Thông Minh:** Tự động căn chỉnh vừa vặn hoàn hảo (`Fit to Viewport`), bổ sung thanh công cụ Zoom mượt mà (30% - 200%), nút `Vừa Khung`, nút `100%`, nút `➖` / `➕`.
               - **Bảo toàn tên file gốc khi xuất:** Loại bỏ hoàn toàn hậu tố tự sinh `_compressed` / `_watermarked`, giữ nguyên 100% tên file gốc khi xuất ảnh.
             - **🎵 Bộ nạp video TikTok chuyên dụng mới (No Watermark):**
