@@ -274,8 +274,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
     def _init_state(self):
         """Khởi tạo toàn bộ biến trạng thái từ config đã lưu (hoặc giá trị mặc định)."""
-        # Đọc config của parent nếu có, không thì load fresh
-        cfg = getattr(self.parent, "config", None) or load_config()
+        # Đọc config của parent nếu có và là dict, không thì load fresh
+        parent_cfg = getattr(self.parent, "config", None)
+        cfg = parent_cfg if isinstance(parent_cfg, dict) else load_config()
         self._app_config = cfg
 
         self._engine = ImageCompressorEngine()
@@ -1358,8 +1359,8 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             cfg["img_wm_text_box_opacity"] = int(self._wm_text_box_opacity.get())
             cfg["img_wm_text_offset_x"] = float(self._wm_text_offset_x.get())
             cfg["img_wm_text_offset_y"] = float(self._wm_text_offset_y.get())
-            # Cập nhật config của parent nếu có
-            if hasattr(self.parent, "config"):
+            # Cập nhật config của parent nếu có và là dict
+            if hasattr(self.parent, "config") and isinstance(getattr(self.parent, "config"), dict):
                 self.parent.config.update(cfg)
             save_config(cfg)
         except Exception:
