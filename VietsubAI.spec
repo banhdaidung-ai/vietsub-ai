@@ -18,6 +18,7 @@ hiddenimports = [
     # Core modules - đảm bảo luôn được đóng gói
     'core.xhs_downloader',
     'core.tiktok_downloader',
+    'core.instagram_downloader',
     'core.downloader',
     'core.douyin',
     'core.pipeline',
@@ -152,8 +153,8 @@ if is_mac:
             'CFBundleName': 'Vietsub AI',
             'CFBundleDisplayName': 'Vietsub AI',
             'CFBundleIdentifier': 'com.vietsubai.app',
-            'CFBundleVersion': '1.3.1',
-            'CFBundleShortVersionString': '1.3.1',
+            'CFBundleVersion': '1.3.2',
+            'CFBundleShortVersionString': '1.3.2',
             'NSHighResolutionCapable': True,
             'LSMinimumSystemVersion': '11.0',
             'NSHumanReadableCopyright': 'Copyright © 2026 Vietsub AI',
