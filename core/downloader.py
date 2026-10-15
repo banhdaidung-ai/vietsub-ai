@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import urllib.parse
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from utils.platform_helper import run_hidden_subprocess
 
@@ -98,6 +98,11 @@ class VideoDownloader:
         self.progress_callback = progress_callback
         self.is_cancelled = is_cancelled
         self._downloaded_path: Optional[str] = None
+        self._downloaded_files: List[str] = []
+
+    @property
+    def downloaded_files(self) -> List[str]:
+        return getattr(self, "_downloaded_files", []) or ([self._downloaded_path] if self._downloaded_path else [])
 
     def _report(self, pct: float, label: str):
         if self.progress_callback:
@@ -305,7 +310,8 @@ class VideoDownloader:
                     "Bạn có thể tải thủ công rồi dùng 'Chọn File Video Trên Máy'."
                 )
             elif any(d in url_clean.lower() for d in ("instagram.com", "instagr.am")):
-                if any(k in err_msg.lower() for k in ("login", "rate-limit", "redirect", "empty media", "restricted", "private")):
+                # Nếu yt-dlp báo rõ lỗi cần đăng nhập hoặc rate-limit -> Thông báo ngay
+                if any(k in err_msg.lower() for k in ("login", "rate-limit", "redirect", "restricted", "private")):
                     raise RuntimeError(
                         "Video Instagram này không thể tải do bị giới hạn truy cập ẩn danh (yêu cầu đăng nhập hoặc bài viết riêng tư).\n"
                         f"Chi tiết kỹ thuật: {err_msg}\n\n"
@@ -313,6 +319,34 @@ class VideoDownloader:
                         "1. Đảm bảo bài viết / Reels ở chế độ Công khai (Public).\n"
                         "2. Nếu là tài khoản riêng tư, bạn có thể xuất file cookies.txt từ trình duyệt và đặt vào ~/.vietsub_ai/cookies.txt để tải bình thường."
                     )
+                # ── FALLBACK: Instagram (ảnh đơn hoặc album carousel khi yt-dlp không tìm thấy video) ──
+                try:
+                    self._report(0.05, "Đang thử phương thức tải Instagram chuyên dụng...")
+                    from core.instagram_downloader import InstagramDownloader
+                    insta_dl = InstagramDownloader()
+                    saved_files = insta_dl.download_post(
+                        url=url_clean,
+                        output_dir=output_dir,
+                        progress_callback=self.progress_callback,
+                        is_cancelled=self.is_cancelled,
+                    )
+                    if saved_files:
+                        self._downloaded_path = saved_files[0]
+                        self._downloaded_files = saved_files
+                        return self._downloaded_path
+                except (InterruptedError, KeyboardInterrupt):
+                    raise InterruptedError("Tiến trình tải đã bị hủy.")
+                except Exception as insta_err:
+                    err_lower = str(insta_err).lower()
+                    if any(k in err_lower for k in ("login", "rate-limit", "redirect", "empty media", "restricted", "private")):
+                        raise RuntimeError(
+                            "Video Instagram này không thể tải do bị giới hạn truy cập ẩn danh (yêu cầu đăng nhập hoặc bài viết riêng tư).\n"
+                            f"Chi tiết kỹ thuật: {insta_err}\n\n"
+                            "💡 Cách khắc phục:\n"
+                            "1. Đảm bảo bài viết / Reels ở chế độ Công khai (Public).\n"
+                            "2. Nếu là tài khoản riêng tư, bạn có thể xuất file cookies.txt từ trình duyệt và đặt vào ~/.vietsub_ai/cookies.txt để tải bình thường."
+                        )
+                    raise RuntimeError(str(insta_err))
             raise RuntimeError(f"Không thể tải video từ link: {e}")
 
 
@@ -462,6 +496,35 @@ class VideoDownloader:
         self._downloaded_path = str(out_path)
         self._report(1.0, f"Đã tải xong: {out_path.name}")
         return str(out_path)
+
+    def download_images(self, url: str, output_dir: str) -> List[str]:
+        """
+        Tải toàn bộ hình ảnh gốc từ URL (Instagram, ...).
+        Hỗ trợ bài đăng ảnh đơn lẻ và album ảnh (carousel/slideshow).
+        Trả về danh sách đường dẫn các file ảnh đã tải.
+        """
+        self._downloaded_path = None
+        self._downloaded_files = []
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        url_clean = url.strip()
+        clean_extracted = extract_universal_url(url_clean)
+        if clean_extracted:
+            url_clean = clean_extracted
+
+        from core.instagram_downloader import InstagramDownloader
+        if InstagramDownloader.is_instagram_url(url_clean):
+            insta_dl = InstagramDownloader()
+            self._downloaded_files = insta_dl.download_post(
+                url=url_clean,
+                output_dir=output_dir,
+                progress_callback=self.progress_callback,
+                is_cancelled=self.is_cancelled,
+            )
+            if self._downloaded_files:
+                self._downloaded_path = self._downloaded_files[0]
+            return self._downloaded_files
+
+        raise RuntimeError("Tính năng tải ảnh trực tiếp hiện tại hỗ trợ Instagram.")
 
     def download_audio(
         self,

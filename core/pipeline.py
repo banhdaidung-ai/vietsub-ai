@@ -103,6 +103,20 @@ class Pipeline:
             video_path = downloader.download(input_source, tmp_dir, quality=dl_quality)
             self._log(f"✅ Tải xong: {Path(video_path).name}")
 
+            # Kiểm tra nếu kết quả là hình ảnh (bài đăng ảnh / album ảnh)
+            if Path(video_path).suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                downloaded_items = getattr(downloader, "downloaded_files", [video_path])
+                for f in downloaded_items:
+                    try:
+                        dest = os.path.join(output_dir, Path(f).name)
+                        shutil.copy2(f, dest)
+                    except Exception:
+                        pass
+                raise RuntimeError(
+                    f"Liên kết này là bài đăng {len(downloaded_items)} hình ảnh (không có video/âm thanh để tạo phụ đề).\n"
+                    "💡 Toàn bộ ảnh gốc đã được tải về thư mục xuất thành công! Bạn có thể chuyển sang chế độ '⬇️ Video Gốc' để tải trực tiếp ảnh."
+                )
+
             # Lưu một bản sao video gốc chất lượng cao vào thư mục xuất
             try:
                 raw_filename = f"[Gốc] {Path(video_path).name}"

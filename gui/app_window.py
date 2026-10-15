@@ -639,7 +639,7 @@ class AppWindow(_BaseWindow):
         self.url_entry = ctk.CTkEntry(
             url_input_box,
             textvariable=self.url_var,
-            placeholder_text="Dán link Douyin, TikTok, YouTube, Facebook, SoundCloud, Artlist...",
+            placeholder_text="Dán link Instagram (Ảnh/Video), Douyin, TikTok, YouTube, Facebook...",
             height=38,
             corner_radius=8,
             fg_color=BG_INSET,
@@ -1789,7 +1789,7 @@ class AppWindow(_BaseWindow):
                 )
                 if hasattr(self, "lbl_url_hint"):
                     self.lbl_url_hint.configure(
-                        text="💡 Tải file gốc chất lượng cao nhất về máy (nguyên bản 100%, không chèn sub).",
+                        text="💡 Tải video gốc hoặc toàn bộ hình ảnh Instagram chất lượng cao nhất về máy (nguyên bản 100%).",
                         text_color=APPLE_GREEN,
                     )
             elif mode == "download_audio":
@@ -2282,7 +2282,12 @@ class AppWindow(_BaseWindow):
                     is_cancelled=lambda: self._download_cancelled,
                 )
                 file_path = dl.download(url, out_dir, quality=quality)
-                self.task_queue.put({"type": "download_success", "file_path": file_path})
+                downloaded_files = getattr(dl, "downloaded_files", []) or [file_path]
+                self.task_queue.put({
+                    "type": "download_success",
+                    "file_path": file_path,
+                    "downloaded_files": downloaded_files,
+                })
             except (InterruptedError, KeyboardInterrupt):
                 self.task_queue.put({"type": "log", "message": "⚠️ Tiến trình tải đã bị hủy."})
                 self.task_queue.put({"type": "progress", "value": 0.0, "label": "Đã hủy"})
@@ -2782,36 +2787,77 @@ class AppWindow(_BaseWindow):
 
                 elif msg_type == "download_success":
                     fp = msg["file_path"]
-                    fn = Path(fp).name
-                    sz = _fmt_size(fp)
-                    self._log_msg("\n" + "─" * 48)
-                    self._log_msg("🎉 TẢI VIDEO GỐC THÀNH CÔNG!")
-                    self._log_msg(f"   🎬 File: {fn}")
-                    self._log_msg(f"   📁 Lưu tại: {fp}")
-                    self._log_msg("✨ File gốc chất lượng cao nhất đã được lưu an toàn vào thư mục xuất.")
-                    self._log_msg("💡 Sếp có thể bấm nút '📁 Mở Thư Mục Xuất' để mở video xem ngay!")
+                    downloaded_files = msg.get("downloaded_files", [fp])
+                    is_image_post = any(
+                        Path(f).suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".heic")
+                        for f in downloaded_files
+                    )
                     self.file_path_var.set(fp)
                     self.progress_bar.set(1.0)
                     self.pct_badge.configure(text="100%")
-                    self.status_label.configure(text="✨ Đã tải xong video gốc.")
 
-                    # Hiển thị Popup hoàn tất cho video gốc
-                    self.after(
-                        300,
-                        lambda p=fp, n=fn, s=sz: CompletionDialog(
-                            self,
-                            video_path=p,
-                            title_text="TẢI VIDEO GỐC THÀNH CÔNG!",
-                            subtitle_text="Video gốc chất lượng cao nhất đã được tải về và lưu an toàn.",
-                            custom_rows=[
-                                ("🎬", "File video gốc:", f"{n}  ({s})", TEXT_PRIMARY),
-                                ("📁", "Thư mục lưu:", str(Path(p).parent), TEXT_SECONDARY),
-                                ("⏱️", "Thời gian tải:", self._last_elapsed_str or "Hoàn tất", APPLE_GREEN),
-                            ],
-                            elapsed_str=self._last_elapsed_str or "00:00",
-                            on_new_video=self._reset_for_new_video,
-                        ),
-                    )
+                    if is_image_post:
+                        total_imgs = len(downloaded_files)
+                        folder_path = str(Path(fp).parent)
+                        self._log_msg("\n" + "─" * 48)
+                        self._log_msg(f"🎉 TẢI HÌNH ẢNH INSTAGRAM THÀNH CÔNG ({total_imgs} ảnh)!")
+                        for i, f_path in enumerate(downloaded_files):
+                            self._log_msg(f"   📸 Ảnh #{i+1}: {Path(f_path).name} ({_fmt_size(f_path)})")
+                        self._log_msg(f"   📁 Thư mục lưu: {folder_path}")
+                        self._log_msg("✨ Toàn bộ ảnh gốc chất lượng cao nhất đã được lưu an toàn.")
+                        self._log_msg("💡 Sếp có thể bấm nút '📁 Mở Thư Mục Xuất' để xem ảnh ngay!")
+                        self.status_label.configure(text=f"✨ Đã tải xong {total_imgs} hình ảnh Instagram.")
+
+                        first_fn = Path(fp).name
+                        sz = _fmt_size(fp)
+                        row_title = f"{first_fn} (và {total_imgs-1} ảnh khác)" if total_imgs > 1 else f"{first_fn}  ({sz})"
+                        title_text = f"TẢI THÀNH CÔNG {total_imgs} HÌNH ẢNH!" if total_imgs > 1 else "TẢI ẢNH INSTAGRAM THÀNH CÔNG!"
+                        sub_text = "Toàn bộ hình ảnh chất lượng cao nhất đã được lưu an toàn."
+
+                        self.after(
+                            300,
+                            lambda p=fp, t=title_text, st=sub_text, rt=row_title, fld=folder_path: CompletionDialog(
+                                self,
+                                video_path=p,
+                                title_text=t,
+                                subtitle_text=st,
+                                custom_rows=[
+                                    ("📸", "File ảnh đã tải:", rt, TEXT_PRIMARY),
+                                    ("📁", "Thư mục lưu:", fld, TEXT_SECONDARY),
+                                    ("⏱️", "Thời gian tải:", self._last_elapsed_str or "Hoàn tất", APPLE_GREEN),
+                                ],
+                                elapsed_str=self._last_elapsed_str or "00:00",
+                                on_new_video=self._reset_for_new_video,
+                            ),
+                        )
+                    else:
+                        fn = Path(fp).name
+                        sz = _fmt_size(fp)
+                        self._log_msg("\n" + "─" * 48)
+                        self._log_msg("🎉 TẢI VIDEO GỐC THÀNH CÔNG!")
+                        self._log_msg(f"   🎬 File: {fn}")
+                        self._log_msg(f"   📁 Lưu tại: {fp}")
+                        self._log_msg("✨ File gốc chất lượng cao nhất đã được lưu an toàn vào thư mục xuất.")
+                        self._log_msg("💡 Sếp có thể bấm nút '📁 Mở Thư Mục Xuất' để mở video xem ngay!")
+                        self.status_label.configure(text="✨ Đã tải xong video gốc.")
+
+                        # Hiển thị Popup hoàn tất cho video gốc
+                        self.after(
+                            300,
+                            lambda p=fp, n=fn, s=sz: CompletionDialog(
+                                self,
+                                video_path=p,
+                                title_text="TẢI VIDEO GỐC THÀNH CÔNG!",
+                                subtitle_text="Video gốc chất lượng cao nhất đã được tải về và lưu an toàn.",
+                                custom_rows=[
+                                    ("🎬", "File video gốc:", f"{n}  ({s})", TEXT_PRIMARY),
+                                    ("📁", "Thư mục lưu:", str(Path(p).parent), TEXT_SECONDARY),
+                                    ("⏱️", "Thời gian tải:", self._last_elapsed_str or "Hoàn tất", APPLE_GREEN),
+                                ],
+                                elapsed_str=self._last_elapsed_str or "00:00",
+                                on_new_video=self._reset_for_new_video,
+                            ),
+                        )
 
                 elif msg_type in ("audio_download_success", "audio_extract_success"):
                     fp = msg["file_path"]
