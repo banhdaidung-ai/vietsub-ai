@@ -143,6 +143,22 @@ class AppWindow(_BaseWindow):
         # Mặc định full màn hình (maximized) khi mở app
         self.after(50, self._maximize_window)
 
+        # Lắng nghe sự kiện đóng cửa sổ để flush toàn bộ cấu hình trước khi thoát
+        self.protocol("WM_DELETE_WINDOW", self._on_app_close)
+
+    def _on_app_close(self):
+        """Xử lý trước khi đóng app: flush cấu hình của tất cả view đang mở rồi mới thoát."""
+        try:
+            if hasattr(self, "compressor_view") and self.compressor_view:
+                self.compressor_view._save_img_settings()
+        except Exception:
+            pass
+        try:
+            save_config(self.config)
+        except Exception:
+            pass
+        self.destroy()
+
     def _maximize_window(self):
         """Mở cửa sổ cực đại / full màn hình theo chuẩn hệ điều hành."""
         try:

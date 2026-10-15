@@ -96,7 +96,6 @@ class CompressCompletionModal(ctk.CTkToplevel):
         self.focus_force()
         try:
             self.attributes("-topmost", True)
-            self.after(500, lambda: self.attributes("-topmost", False) if self.winfo_exists() else None)
         except Exception:
             pass
 
@@ -274,9 +273,18 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
     def _init_state(self):
         """Khởi tạo toàn bộ biến trạng thái từ config đã lưu (hoặc giá trị mặc định)."""
-        # Đọc config của parent nếu có và là dict, không thì load fresh
-        parent_cfg = getattr(self.parent, "config", None)
-        cfg = parent_cfg if isinstance(parent_cfg, dict) else load_config()
+        # Đọc config ưu tiên từ toplevel window (AppWindow), parent, hoặc load fresh từ file
+        cfg = None
+        try:
+            top = self.winfo_toplevel()
+            if hasattr(top, "config") and isinstance(getattr(top, "config"), dict):
+                cfg = top.config
+        except Exception:
+            pass
+        if cfg is None and hasattr(self.parent, "config") and isinstance(getattr(self.parent, "config"), dict):
+            cfg = self.parent.config
+        if cfg is None or not isinstance(cfg, dict):
+            cfg = load_config()
         self._app_config = cfg
 
         self._engine = ImageCompressorEngine()
@@ -288,9 +296,18 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._batch_start_time: Optional[float] = None
         self._timer_running = False
         self._timer_after_id = None
+        self._save_settings_timer = None
 
         # ── Compress state (load từ config) ──
         self._compress_enabled = ctk.BooleanVar(value=bool(cfg.get("img_compress_enabled", True)))
+        self._target_var = ctk.StringVar(value=str(cfg.get("img_target_value", "500")))
+        self._unit_var = ctk.StringVar(value=str(cfg.get("img_target_unit", "KB")))
+        self._fmt_var = ctk.StringVar(value=str(cfg.get("img_output_format", "Tự động")))
+        self._exif_var = ctk.BooleanVar(value=bool(cfg.get("img_keep_exif", True)))
+
+        _saved_out = str(cfg.get("img_output_dir", "")).strip()
+        default_out = _saved_out if _saved_out else str(Path.home() / "Downloads" / "compressed_images")
+        self._out_dir_var = ctk.StringVar(value=default_out)
 
         # ── Watermark state (load từ config) ──
         self._wm_logo_enabled  = ctk.BooleanVar(value=bool(cfg.get("img_wm_logo_enabled", False)))
@@ -326,10 +343,30 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._preview_zoom_factor = 1.0 # 1.0 = Fit vừa vặn khung nhìn
         self._preview_zoom_var = ctk.DoubleVar(value=1.0)
 
-        # ── Auto-save traces cho các trường nhập văn bản ──
-        # (các nút và switch đã gọi _save_img_settings() trực tiếp)
-        self._wm_text_custom.trace_add("write", lambda *_: self._save_img_settings())
-        self._wm_logo_path.trace_add("write", lambda *_: self._save_img_settings())
+        # ── Auto-save traces cho TẤT CẢ các biến cài đặt ──
+        # Đảm bảo mỗi khi người dùng thay đổi bất kỳ ô nhập, thanh trượt hay switch nào
+        # thì cấu hình đều được ghi nhận và lưu lại ngay lập tức
+        _tracked_vars = [
+            self._compress_enabled, self._target_var, self._unit_var,
+            self._fmt_var, self._exif_var, self._out_dir_var,
+            self._wm_logo_enabled, self._wm_logo_path, self._wm_logo_scale,
+            self._wm_logo_pos, self._wm_logo_opacity, self._wm_logo_offset_x, self._wm_logo_offset_y,
+            self._wm_text_enabled, self._wm_text_source, self._wm_text_custom,
+            self._wm_text_pos, self._wm_text_size, self._wm_text_bold,
+            self._wm_text_shadow, self._wm_text_box, self._wm_text_box_opacity,
+            self._wm_text_offset_x, self._wm_text_offset_y,
+        ]
+        for v in _tracked_vars:
+            v.trace_add("write", lambda *_: self._schedule_save_settings())
+
+    def _schedule_save_settings(self):
+        """Debounce tự động lưu cài đặt sau 100ms để tối ưu hiệu năng."""
+        if hasattr(self, "_save_settings_timer") and self._save_settings_timer:
+            try:
+                self.after_cancel(self._save_settings_timer)
+            except Exception:
+                pass
+        self._save_settings_timer = self.after(100, self._save_img_settings)
 
 
     def _maximize_window(self):
@@ -569,7 +606,6 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self._size_grp, text="🎯 Mục tiêu:",
                      font=("Arial", 11, "bold"), text_color=TEXT_PRIMARY).pack(side="left", padx=(0, 6))
 
-        self._target_var = ctk.StringVar(value=str(self._app_config.get("img_target_value", "500")))  # Khôi phục từ config
         self._target_entry = ctk.CTkEntry(
             self._size_grp, textvariable=self._target_var,
             width=65, height=28, corner_radius=7,
@@ -579,7 +615,6 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         )
         self._target_entry.pack(side="left", padx=(0, 4))
 
-        self._unit_var = ctk.StringVar(value=str(self._app_config.get("img_target_unit", "KB")))
         self._unit_menu = ctk.CTkOptionMenu(
             self._size_grp, values=["KB", "MB"], variable=self._unit_var,
             width=62, height=28, corner_radius=7,
@@ -614,20 +649,20 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(cfg_row_fmt, text="📦 Định dạng xuất:",
                      font=("Arial", 11, "bold"), text_color=TEXT_PRIMARY).pack(side="left", padx=(0, 8))
-        self._fmt_var = ctk.StringVar(value=str(self._app_config.get("img_output_format", "Tự động")))
         ctk.CTkOptionMenu(
             cfg_row_fmt, values=["Tự động", "JPEG", "PNG", "WEBP"],
             variable=self._fmt_var,
             width=110, height=28, corner_radius=7,
             fg_color=BG_INSET, button_color=BG_PILL, button_hover_color=BG_PILL_HOV,
             text_color=TEXT_PRIMARY, font=("Arial", 11),
+            command=lambda _: self._save_img_settings(),
         ).pack(side="left", padx=(0, 16))
 
-        self._exif_var = ctk.BooleanVar(value=bool(self._app_config.get("img_keep_exif", True)))
         ctk.CTkSwitch(
             cfg_row_fmt, text="Giữ metadata EXIF gốc", variable=self._exif_var,
             font=("Arial", 11), text_color=TEXT_SECONDARY,
             progress_color=APPLE_GREEN, width=44, height=20,
+            command=self._save_img_settings,
         ).pack(side="left")
 
         # Dòng 3: Thư mục xuất
@@ -637,8 +672,6 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(cfg_row2, text="📁 Thư mục xuất:",
                      font=("Arial", 12, "bold"), text_color=TEXT_PRIMARY).pack(side="left", padx=(0, 8))
 
-        _saved_out = str(self._app_config.get("img_output_dir", "")).strip()
-        self._out_dir_var = ctk.StringVar(value=_saved_out if _saved_out else str(Path.home() / "Downloads" / "compressed_images"))
         self._out_entry = ctk.CTkEntry(
             cfg_row2, textvariable=self._out_dir_var,
             height=32, corner_radius=7,
@@ -704,14 +737,84 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._progress_bar.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 6))
         self._progress_bar.set(0.0)
 
-        # Log Textbox
+        # ── Banner Trạng Thái Thành Công Nổi Bật (In-App Success Card) ──
+        self._success_banner = ctk.CTkFrame(
+            result_card,
+            fg_color="#0D2818",
+            border_width=1.5,
+            border_color="#10B981",
+            corner_radius=10,
+        )
+        self._success_banner.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 8))
+        self._success_banner.grid_remove()  # Ẩn mặc định khi chưa chạy
+
+        sb_inner = ctk.CTkFrame(self._success_banner, fg_color="transparent")
+        sb_inner.pack(fill="x", padx=14, pady=10)
+
+        ctk.CTkLabel(
+            sb_inner,
+            text="🎉",
+            font=("Arial", 28),
+        ).pack(side="left", padx=(0, 12))
+
+        sb_text_grp = ctk.CTkFrame(sb_inner, fg_color="transparent")
+        sb_text_grp.pack(side="left", fill="x", expand=True)
+
+        self._sb_title = ctk.CTkLabel(
+            sb_text_grp,
+            text="NÉN ẢNH HOÀN TẤT THÀNH CÔNG!",
+            font=("Arial", 14, "bold"),
+            text_color="#34D399",
+            anchor="w",
+        )
+        self._sb_title.pack(anchor="w")
+
+        self._sb_desc = ctk.CTkLabel(
+            sb_text_grp,
+            text="Tất cả các tệp hình ảnh đã được xử lý hoàn tất.",
+            font=("Arial", 11),
+            text_color="#E2E8F0",
+            anchor="w",
+        )
+        self._sb_desc.pack(anchor="w", pady=(2, 0))
+
+        sb_btn_grp = ctk.CTkFrame(sb_inner, fg_color="transparent")
+        sb_btn_grp.pack(side="right", padx=(10, 0))
+
+        ctk.CTkButton(
+            sb_btn_grp,
+            text="📁 Mở Thư Mục Xuất",
+            font=("Arial", 11, "bold"),
+            fg_color="#059669",
+            hover_color="#10B981",
+            text_color="#FFFFFF",
+            height=32,
+            corner_radius=7,
+            command=self._open_out_dir,
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            sb_btn_grp,
+            text="✕",
+            font=("Arial", 12, "bold"),
+            fg_color=BG_PILL,
+            hover_color=BG_PILL_HOV,
+            text_color=TEXT_PRIMARY,
+            width=32,
+            height=32,
+            corner_radius=7,
+            command=lambda: self._success_banner.grid_remove(),
+        ).pack(side="left")
+
+        # Log Textbox (Row 3 co giãn tối đa)
+        result_card.grid_rowconfigure(3, weight=1)
         self._result_box = ctk.CTkTextbox(
             result_card, font=("Consolas", 11),
             fg_color="#0D0E12", text_color="#D8DEE9",
             corner_radius=10, border_width=1, border_color=BORDER_INSET,
             height=140,
         )
-        self._result_box.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 10))
+        self._result_box.grid(row=3, column=0, sticky="nsew", padx=14, pady=(0, 10))
         self._result_box.configure(state="disabled")
 
     # ─────────────────────────────────────────────────────────
@@ -1331,40 +1434,74 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         """Lưu toàn bộ thông số Image Compressor vào config để khôi phục khi mở lại."""
         try:
             cfg = getattr(self, "_app_config", None)
-            if cfg is None:
-                return
-            cfg["img_compress_enabled"] = self._compress_enabled.get()
-            cfg["img_target_value"]     = self._target_var.get()
-            cfg["img_target_unit"]      = self._unit_var.get()
-            cfg["img_output_format"]    = self._fmt_var.get()
-            cfg["img_keep_exif"]        = self._exif_var.get()
-            cfg["img_output_dir"]       = self._out_dir_var.get()
-            cfg["img_wm_logo_enabled"]  = self._wm_logo_enabled.get()
-            cfg["img_wm_logo_path"]     = self._wm_logo_path.get()
+            if cfg is None or not isinstance(cfg, dict):
+                cfg = load_config()
+                self._app_config = cfg
+
+            cfg["img_compress_enabled"] = bool(self._compress_enabled.get())
+            cfg["img_target_value"]     = str(self._target_var.get()).strip()
+            cfg["img_target_unit"]      = str(self._unit_var.get()).strip()
+            cfg["img_output_format"]    = str(self._fmt_var.get()).strip()
+            cfg["img_keep_exif"]        = bool(self._exif_var.get())
+            cfg["img_output_dir"]       = str(self._out_dir_var.get()).strip()
+
+            cfg["img_wm_logo_enabled"]  = bool(self._wm_logo_enabled.get())
+            cfg["img_wm_logo_path"]     = str(self._wm_logo_path.get()).strip()
             cfg["img_wm_logo_scale"]    = float(self._wm_logo_scale.get())
-            cfg["img_wm_logo_pos"]      = self._wm_logo_pos.get()
+            cfg["img_wm_logo_pos"]      = str(self._wm_logo_pos.get())
             cfg["img_wm_logo_opacity"]  = int(self._wm_logo_opacity.get())
             cfg["img_wm_logo_offset_x"] = float(self._wm_logo_offset_x.get())
             cfg["img_wm_logo_offset_y"] = float(self._wm_logo_offset_y.get())
-            cfg["img_wm_text_enabled"]  = self._wm_text_enabled.get()
-            cfg["img_wm_text_source"]   = self._wm_text_source.get()
-            cfg["img_wm_text_custom"]   = self._wm_text_custom.get()
-            cfg["img_wm_text_pos"]      = self._wm_text_pos.get()
+
+            cfg["img_wm_text_enabled"]  = bool(self._wm_text_enabled.get())
+            cfg["img_wm_text_source"]   = str(self._wm_text_source.get())
+            cfg["img_wm_text_custom"]   = str(self._wm_text_custom.get())
+            cfg["img_wm_text_pos"]      = str(self._wm_text_pos.get())
             cfg["img_wm_text_size"]     = int(self._wm_text_size.get())
-            cfg["img_wm_text_color"]    = self._wm_text_color
-            cfg["img_wm_text_bold"]     = self._wm_text_bold.get()
-            cfg["img_wm_text_shadow"]   = self._wm_text_shadow.get()
-            cfg["img_wm_text_box"]      = self._wm_text_box.get()
-            cfg["img_wm_text_box_color"]= self._wm_text_box_color
+            cfg["img_wm_text_color"]    = str(self._wm_text_color)
+            cfg["img_wm_text_bold"]     = bool(self._wm_text_bold.get())
+            cfg["img_wm_text_shadow"]   = bool(self._wm_text_shadow.get())
+            cfg["img_wm_text_box"]      = bool(self._wm_text_box.get())
+            cfg["img_wm_text_box_color"]= str(self._wm_text_box_color)
             cfg["img_wm_text_box_opacity"] = int(self._wm_text_box_opacity.get())
             cfg["img_wm_text_offset_x"] = float(self._wm_text_offset_x.get())
             cfg["img_wm_text_offset_y"] = float(self._wm_text_offset_y.get())
-            # Cập nhật config của parent nếu có và là dict
+
+            # Cập nhật config của cửa sổ chính (AppWindow / Toplevel) nếu có
+            try:
+                top = self.winfo_toplevel()
+                if hasattr(top, "config") and isinstance(getattr(top, "config"), dict):
+                    top.config.update(cfg)
+            except Exception:
+                pass
+
             if hasattr(self.parent, "config") and isinstance(getattr(self.parent, "config"), dict):
                 self.parent.config.update(cfg)
+
             save_config(cfg)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[CompressorView] _save_img_settings error: {e}")
+
+    def _show_success_banner(self, ok: int, total: int, saved_str: str, red_pct: float, elapsed_str: str, is_compress: bool):
+        """Hiển thị Card Banner thông báo thành công rực rỡ ngay trên giao diện."""
+        if not hasattr(self, "_success_banner"):
+            return
+        if is_compress:
+            self._sb_title.configure(text=f"🎉 NÉN HOÀN TẤT: {ok}/{total} ẢNH THÀNH CÔNG!")
+            self._sb_desc.configure(
+                text=f"⏱️ Thời gian: {elapsed_str}  •  Tiết kiệm: {saved_str} (-{red_pct:.1f}%)  •  📁 Đã lưu vào: {self._out_dir_var.get()}"
+            )
+        else:
+            self._sb_title.configure(text=f"🎉 ĐÓNG DẤU HOÀN TẤT: {ok}/{total} ẢNH THÀNH CÔNG!")
+            self._sb_desc.configure(
+                text=f"⏱️ Thời gian: {elapsed_str}  •  Giữ nguyên 100% chất lượng gốc  •  📁 Đã lưu vào: {self._out_dir_var.get()}"
+            )
+        self._success_banner.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 8))
+
+    def _hide_success_banner(self):
+        """Ẩn Card Banner thông báo thành công."""
+        if hasattr(self, "_success_banner"):
+            self._success_banner.grid_remove()
 
     def _set_preset(self, val: str, unit: str):
         self._target_var.set(val)
@@ -1805,6 +1942,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._is_running = True
         self._results.clear()
         self._clear_results()
+        self._hide_success_banner()
         self._btn_start.configure(state="disabled")
         self._btn_cancel.configure(state="normal")
         self._progress_bar.set(0.0)
@@ -1816,7 +1954,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
         action_verb = "nén" if compress_on else "đóng dấu"
         action_title = "Nén ảnh" if compress_on else "Đóng dấu ảnh"
-        self._lbl_status.configure(text=f"🚀 Đang {action_verb} {len(tasks)} ảnh...")
+        self._lbl_status.configure(text=f"🚀 Đang {action_verb} {len(tasks)} ảnh...", text_color=APPLE_CYAN)
 
         if compress_on:
             target_disp = f"{target_kb} KB" if target_kb < 1024 else f"{target_kb/1024:.1f} MB"
@@ -1957,7 +2095,10 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._log_to_parent(f"📁 [{action_tag}] Thư mục lưu: {self._out_dir_var.get()}")
 
         self._stat_badge.configure(text=stat)
-        self._lbl_status.configure(text=status_text)
+        self._lbl_status.configure(text=status_text, text_color=APPLE_GREEN)
+
+        # Hiển thị Banner Card thông báo thành công rực rỡ ngay trên giao diện
+        self._show_success_banner(ok, len(results), self._fmt_kb(saved), red_pct, elapsed_str, compress_on)
 
         # Phát âm thanh thông báo trên macOS
         if sys.platform == "darwin":
@@ -1971,7 +2112,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             # Dùng winfo_toplevel() để luôn lấy cửa sổ gốc
             # (hoạt động đúng cả khi self là CTkFrame hay CTkToplevel)
             _modal_parent = self.winfo_toplevel()
-            CompressCompletionModal(
+            modal = CompressCompletionModal(
                 _modal_parent,
                 ok_count=ok,
                 total_count=len(results),
@@ -1983,8 +2124,10 @@ class ImageCompressorDialog(ctk.CTkToplevel):
                 is_compress_mode=compress_on,
                 elapsed_str=elapsed_str,
             )
-        except Exception:
-            pass
+            modal.lift()
+            modal.focus_force()
+        except Exception as e:
+            print(f"[CompressorView] Completion modal error: {e}")
 
 
     # ─────────────────────────────────────────────────────────
@@ -2044,6 +2187,9 @@ class ImageCompressorView(ctk.CTkFrame):
     # ── Tái dùng toàn bộ logic từ ImageCompressorDialog ──
     _init_state           = ImageCompressorDialog._init_state
     _save_img_settings    = ImageCompressorDialog._save_img_settings
+    _schedule_save_settings = ImageCompressorDialog._schedule_save_settings
+    _show_success_banner  = ImageCompressorDialog._show_success_banner
+    _hide_success_banner  = ImageCompressorDialog._hide_success_banner
     _start_timer          = ImageCompressorDialog._start_timer
     _tick_timer           = ImageCompressorDialog._tick_timer
     _stop_timer           = ImageCompressorDialog._stop_timer

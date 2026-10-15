@@ -199,6 +199,7 @@ def test_dialog_defaults_and_responsiveness():
 
     root = ctk.CTk()
     root.withdraw()
+    root.config = {"img_target_value": "500", "img_wm_text_color": "#000000"}
     dlg = ImageCompressorDialog(root)
     assert dlg._target_var.get() == "500", "Mặc định dung lượng nén phải là 500KB"
     assert dlg._wm_text_color == "#000000", "Mặc định màu mã SP phải là màu đen #000000"
@@ -317,6 +318,85 @@ def test_batch_engine_multi_core_parallel(sample_image):
         assert len(batch_results) == 4
         assert len(progress_calls) == 4
         assert all(r.success for r in batch_results)
+
+
+def test_image_compressor_settings_persistence():
+    """Kiểm tra việc lưu và khôi phục toàn bộ thông số nén ảnh (dung lượng, đơn vị, format, EXIF, thư mục)."""
+    import copy
+    import customtkinter as ctk
+    from utils.config import load_config, save_config
+    from gui.image_compressor_dialog import ImageCompressorDialog
+
+    orig_cfg = copy.deepcopy(load_config())
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        dlg = ImageCompressorDialog(root)
+        dlg.withdraw()
+
+        # Thay đổi các thông số nén
+        dlg._target_var.set("850")
+        dlg._unit_var.set("MB")
+        dlg._fmt_var.set("WEBP")
+        dlg._exif_var.set(False)
+        dlg._out_dir_var.set("/tmp/test_persist_out")
+
+        # Lưu cấu hình
+        dlg._save_img_settings()
+
+        assert dlg._app_config["img_target_value"] == "850"
+        assert dlg._app_config["img_target_unit"] == "MB"
+        assert dlg._app_config["img_output_format"] == "WEBP"
+        assert dlg._app_config["img_keep_exif"] is False
+        assert dlg._app_config["img_output_dir"] == "/tmp/test_persist_out"
+
+        # Tạo view thứ hai để kiểm tra việc khôi phục tự động
+        dlg2 = ImageCompressorDialog(root)
+        dlg2.withdraw()
+
+        assert dlg2._target_var.get() == "850"
+        assert dlg2._unit_var.get() == "MB"
+        assert dlg2._fmt_var.get() == "WEBP"
+        assert dlg2._exif_var.get() is False
+        assert dlg2._out_dir_var.get() == "/tmp/test_persist_out"
+
+        dlg2.destroy()
+        dlg.destroy()
+    finally:
+        save_config(orig_cfg)
+        root.destroy()
+
+
+def test_success_banner_and_status_display():
+    """Kiểm tra hoạt động của Banner thông báo thành công và cập nhật nhãn trạng thái."""
+    import customtkinter as ctk
+    from gui.image_compressor_dialog import ImageCompressorDialog
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        dlg = ImageCompressorDialog(root)
+        dlg.withdraw()
+
+        assert hasattr(dlg, "_success_banner"), "Phải có widget _success_banner"
+        assert hasattr(dlg, "_show_success_banner"), "Phải có method _show_success_banner"
+        assert hasattr(dlg, "_hide_success_banner"), "Phải có method _hide_success_banner"
+
+        # Kích hoạt hiển thị banner thành công nén
+        dlg._show_success_banner(ok=3, total=3, saved_str="15 MB", red_pct=50.0, elapsed_str="2.5s", is_compress=True)
+        assert "3/3 ẢNH THÀNH CÔNG" in dlg._sb_title.cget("text")
+        assert "15 MB" in dlg._sb_desc.cget("text")
+
+        # Ẩn banner khi bắt đầu lượt mới
+        dlg._hide_success_banner()
+
+        # Kích hoạt hiển thị banner thành công đóng dấu
+        dlg._show_success_banner(ok=2, total=2, saved_str="0 KB", red_pct=0.0, elapsed_str="1.0s", is_compress=False)
+        assert "ĐÓNG DẤU HOÀN TẤT" in dlg._sb_title.cget("text")
+
+        dlg.destroy()
+    finally:
+        root.destroy()
 
 
 if __name__ == "__main__":

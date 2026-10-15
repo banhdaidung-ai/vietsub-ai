@@ -42,70 +42,72 @@ def test_app_window_sidebar_and_canvas():
     app = AppWindow()
     app.withdraw()
 
-    # Kiểm tra sự tồn tại của Sidebar và các container chính
-    assert hasattr(app, "sidebar_card"), "Phải có sidebar_card"
-    assert hasattr(app, "main_canvas"), "Phải có main_canvas"
-    assert hasattr(app, "home_view"), "Phải có home_view"
-    assert hasattr(app, "vietsub_container"), "Phải có vietsub_container"
-    assert hasattr(app, "guide_view"), "Phải có guide_view"
+    try:
+        # Kiểm tra sự tồn tại của Sidebar và các container chính
+        assert hasattr(app, "sidebar_card"), "Phải có sidebar_card"
+        assert hasattr(app, "main_canvas"), "Phải có main_canvas"
+        assert hasattr(app, "home_view"), "Phải có home_view"
+        assert hasattr(app, "vietsub_container"), "Phải có vietsub_container"
+        assert hasattr(app, "guide_view"), "Phải có guide_view"
 
-    # Kiểm tra các nút trong Sidebar
-    expected_keys = {"home", "vietsub", "separator", "downloader", "gdrive", "compressor", "sub_editor", "guide"}
-    assert set(app._sidebar_buttons.keys()) == expected_keys
+        # Kiểm tra các nút trong Sidebar
+        expected_keys = {"home", "vietsub", "separator", "downloader", "gdrive", "compressor", "sub_editor", "guide"}
+        assert set(app._sidebar_buttons.keys()) == expected_keys
 
-    # Mặc định khởi động vào Trang Chủ
-    assert getattr(app, "_current_canvas_view", "") == "home"
-    assert getattr(app, "_active_sidebar_key", "") == "home"
+        # Mặc định khởi động vào Trang Chủ
+        assert getattr(app, "_current_canvas_view", "") == "home"
+        assert getattr(app, "_active_sidebar_key", "") == "home"
 
-    # Chuyển sang Vietsub Studio
-    app._on_sidebar_select("vietsub")
-    assert app._current_canvas_view == "vietsub"
-    assert app._active_sidebar_key == "vietsub"
+        # Chuyển sang Vietsub Studio
+        app._on_sidebar_select("vietsub")
+        assert app._current_canvas_view == "vietsub"
+        assert app._active_sidebar_key == "vietsub"
 
-    # Chuyển sang Downloader (thuộc Studio nhưng chọn tab URL Online)
-    app._on_sidebar_select("downloader")
-    assert app._current_canvas_view == "vietsub"
-    assert app._active_sidebar_key == "downloader"
-    assert "Link Online" in app.tabview.get()
-    assert app.btn_start.cget("text") == "🚀 BẮT ĐẦU TẢI"
-    assert "Tải Video - Nhạc" in app._sidebar_buttons["downloader"].cget("text")
+        # Chuyển sang Downloader (thuộc Studio nhưng chọn tab URL Online)
+        app.config["url_action_mode"] = "download_only"
+        app._on_sidebar_select("downloader")
+        assert app._current_canvas_view == "vietsub"
+        assert app._active_sidebar_key == "downloader"
+        assert "Link Online" in app.tabview.get()
+        assert app.btn_start.cget("text") == "🚀 BẮT ĐẦU TẢI"
+        assert "Tải Video - Nhạc" in app._sidebar_buttons["downloader"].cget("text")
 
-    # Kiểm tra bấm nút gdrive từ sidebar chuyển sang canvas view 'gdrive'
-    app._on_sidebar_select("gdrive")
-    assert app._current_canvas_view == "gdrive"
-    assert app._active_sidebar_key == "gdrive"
-    assert hasattr(app, "gdrive_view")
+        # Kiểm tra bấm nút gdrive từ sidebar chuyển sang canvas view 'gdrive'
+        app._on_sidebar_select("gdrive")
+        assert app._current_canvas_view == "gdrive"
+        assert app._active_sidebar_key == "gdrive"
+        assert hasattr(app, "gdrive_view")
 
-    # Chuyển sang Hướng Dẫn
-    app._on_sidebar_select("guide")
-    assert app._current_canvas_view == "guide"
-    assert app._active_sidebar_key == "guide"
+        # Chuyển sang Hướng Dẫn
+        app._on_sidebar_select("guide")
+        assert app._current_canvas_view == "guide"
+        assert app._active_sidebar_key == "guide"
 
-    # Chuyển quay lại Trang Chủ
-    app._on_sidebar_select("home")
-    assert app._current_canvas_view == "home"
-    assert app._active_sidebar_key == "home"
-
-    app.destroy()
+        # Chuyển quay lại Trang Chủ
+        app._on_sidebar_select("home")
+        assert app._current_canvas_view == "home"
+        assert app._active_sidebar_key == "home"
+    finally:
+        app.destroy()
 
 
 def test_tabview_sidebar_synchronization():
     """Kiểm tra tính đồng bộ 2 chiều: khi đổi tab trong Vietsub Studio thì Sidebar đổi tương ứng."""
     app = AppWindow()
     app.withdraw()
+    try:
+        # Mở Vietsub Studio
+        app._on_sidebar_select("vietsub")
+        assert app._active_sidebar_key == "vietsub"
 
-    # Mở Vietsub Studio
-    app._on_sidebar_select("vietsub")
-    assert app._active_sidebar_key == "vietsub"
+        # Giả lập chuyển sang tab URL Online trong Studio
+        app.tabview.set("🌐 Dán Link Online (TikTok, YouTube, Facebook...)")
+        app._on_tab_changed()
+        assert app._active_sidebar_key == "downloader"
 
-    # Giả lập chuyển sang tab URL Online trong Studio
-    app.tabview.set("🌐 Dán Link Online (TikTok, YouTube, Facebook...)")
-    app._on_tab_changed()
-    assert app._active_sidebar_key == "downloader"
-
-    # Giả lập chuyển lại tab Chọn File trong Studio
-    app.tabview.set("📂 Chọn File Video Trên Máy")
-    app._on_tab_changed()
-    assert app._active_sidebar_key == "vietsub"
-
-    app.destroy()
+        # Giả lập chuyển lại tab Chọn File trong Studio
+        app.tabview.set("📂 Chọn File Video Trên Máy")
+        app._on_tab_changed()
+        assert app._active_sidebar_key == "vietsub"
+    finally:
+        app.destroy()
