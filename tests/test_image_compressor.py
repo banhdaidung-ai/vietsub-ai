@@ -399,6 +399,174 @@ def test_success_banner_and_status_display():
         root.destroy()
 
 
+def test_fmt_kb_and_finalize_callable():
+    """Kiểm tra hàm _fmt_kb hoạt động chính xác khi gọi độc lập và qua instance method của Dialog/View."""
+    import customtkinter as ctk
+    from gui.image_compressor_dialog import ImageCompressorDialog, ImageCompressorView, _fmt_kb
+
+    assert _fmt_kb(500) == "500 KB"
+    assert _fmt_kb(2048) == "2.00 MB"
+    assert _fmt_kb(0) == "0 KB"
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        dlg = ImageCompressorDialog(root)
+        dlg.withdraw()
+        assert dlg._fmt_kb(1024) == "1.00 MB"
+
+        view = ImageCompressorView(root)
+        assert view._fmt_kb(1024) == "1.00 MB"
+
+        dlg.destroy()
+        view.destroy()
+    finally:
+        root.destroy()
+
+
+def test_compress_completion_modal_creation():
+    """Kiểm tra khởi tạo Popup hoàn tất CompressCompletionModal đầy đủ thông tin và nút bấm."""
+    import customtkinter as ctk
+    from gui.image_compressor_dialog import CompressCompletionModal
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        modal = CompressCompletionModal(
+            parent=root,
+            ok_count=5,
+            total_count=5,
+            src_size_str="10.5 MB",
+            dst_size_str="2.1 MB",
+            saved_str="8.4 MB",
+            reduction_pct=80.0,
+            out_dir="/tmp/test_compress_out",
+            is_compress_mode=True,
+            elapsed_str="3.2s",
+        )
+        modal.withdraw()
+
+        assert modal.is_compress_mode is True
+        assert modal.out_dir == "/tmp/test_compress_out"
+        assert hasattr(modal, "_open_folder")
+        modal.destroy()
+    finally:
+        root.destroy()
+
+
+def test_watermark_indicator_labels_sync():
+    """Kiểm tra các nhãn chỉ số phần trăm slider watermark được cập nhật chính xác theo config đã lưu."""
+    import customtkinter as ctk
+    from gui.image_compressor_dialog import ImageCompressorDialog
+    from utils.config import load_config, save_config
+
+    orig_cfg = load_config()
+    test_cfg = dict(orig_cfg)
+    test_cfg["image_compressor"] = {
+        "logo_scale": 0.35,
+        "logo_opacity": 0.85,
+        "logo_offset_x": 12,
+        "logo_offset_y": -8,
+        "text_size": 28,
+        "box_opacity": 0.70,
+        "text_offset_x": 15,
+        "text_offset_y": 25,
+    }
+    save_config(test_cfg)
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        dlg = ImageCompressorDialog(root)
+        dlg.withdraw()
+
+        assert dlg._logo_scale_lbl.cget("text") == "35%"
+        assert dlg._logo_op_lbl.cget("text") == "85%"
+        assert dlg._logo_offx_lbl.cget("text") == "+12%"
+        assert dlg._logo_offy_lbl.cget("text") == "-8%"
+        assert dlg._text_size_lbl.cget("text") == "28"
+        assert dlg._box_op_lbl.cget("text") == "70%"
+        assert dlg._text_offx_lbl.cget("text") == "+15%"
+        assert dlg._text_offy_lbl.cget("text") == "+25%"
+
+        dlg.destroy()
+    finally:
+        save_config(orig_cfg)
+        root.destroy()
+
+
+def test_cross_platform_windows_sound_and_open_folder(monkeypatch):
+    """Kiểm tra phát âm thanh và mở thư mục chuẩn trên nền tảng Windows."""
+    import sys
+    import types
+    import os
+    from gui.image_compressor_dialog import _play_system_sound, CompressCompletionModal
+    import customtkinter as ctk
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            modal = CompressCompletionModal(
+                parent=root,
+                ok_count=1,
+                total_count=1,
+                src_size_str="1 MB",
+                dst_size_str="500 KB",
+                saved_str="500 KB",
+                reduction_pct=50.0,
+                out_dir=tmp_dir,
+                is_compress_mode=True,
+            )
+            modal.withdraw()
+
+            # Giả lập môi trường Windows sau khi UI đã init
+            monkeypatch.setattr(sys, "platform", "win32")
+
+            sound_played = []
+            fake_winsound = types.ModuleType("winsound")
+            fake_winsound.MB_ICONASTERISK = 64
+            fake_winsound.MessageBeep = lambda icon: sound_played.append(icon)
+            monkeypatch.setitem(sys.modules, "winsound", fake_winsound)
+
+            _play_system_sound()
+            assert 64 in sound_played, "winsound.MessageBeep phải được gọi trên Windows"
+
+            # Giả lập mở thư mục trên Windows
+            startfile_called = []
+            fake_os_startfile = lambda path: startfile_called.append(path)
+            monkeypatch.setattr(os, "startfile", fake_os_startfile, raising=False)
+
+            modal._open_folder()
+            assert len(startfile_called) == 1
+            assert startfile_called[0] == os.path.normpath(str(tmp_dir))
+    finally:
+        root.destroy()
+
+
+def test_canvas_view_switch_flushes_compressor_settings():
+    """Kiểm tra việc chuyển view khỏi 'compressor' tự động lưu cấu hình bộ nén ảnh."""
+    import types
+    from gui.app_window import AppWindow
+
+    saved_calls = []
+
+    class DummyCompressorView:
+        def _save_img_settings(self):
+            saved_calls.append(True)
+        def grid_remove(self):
+            pass
+
+    dummy_self = types.SimpleNamespace()
+    dummy_self._current_canvas_view = "compressor"
+    dummy_self.compressor_view = DummyCompressorView()
+
+    AppWindow._show_canvas_view(dummy_self, "home")
+
+    assert len(saved_calls) == 1, "_save_img_settings phải được gọi khi chuyển từ compressor sang view khác"
+    assert dummy_self._current_canvas_view == "home"
+
+
 if __name__ == "__main__":
     import sys
     repo_root = str(Path(__file__).resolve().parent.parent)

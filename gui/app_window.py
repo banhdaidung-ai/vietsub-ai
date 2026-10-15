@@ -1641,6 +1641,14 @@ class AppWindow(_BaseWindow):
 
     def _show_canvas_view(self, view_name: str):
         """Chuyển đổi các view trên Main Canvas: 'home', 'vietsub', 'guide', 'compressor', 'gdrive'."""
+        # Lưu cài đặt của bộ nén ảnh nếu đang chuyển từ compressor sang view khác
+        prev_view = getattr(self, "_current_canvas_view", "")
+        if prev_view == "compressor" and hasattr(self, "compressor_view") and self.compressor_view:
+            try:
+                self.compressor_view._save_img_settings()
+            except Exception:
+                pass
+
         self._current_canvas_view = view_name
 
         if hasattr(self, "home_view"):

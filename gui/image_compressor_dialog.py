@@ -62,11 +62,38 @@ TEXT_TERTIARY  = "#636366"
 
 
 # ─────────────────────────────────────────────────────────────
+# Hàm tiện ích chung & Âm thanh thông báo hệ thống (Cross-Platform)
+# ─────────────────────────────────────────────────────────────
+
+def _fmt_kb(kb: float) -> str:
+    """Định dạng số KB thành chuỗi KB hoặc MB hiển thị trực quan."""
+    try:
+        kb_val = float(kb)
+        if kb_val >= 1024:
+            return f"{kb_val / 1024:.2f} MB"
+        return f"{kb_val:.0f} KB"
+    except Exception:
+        return f"{kb} KB"
+
+
+def _play_system_sound() -> None:
+    """Phát âm thanh thông báo hệ thống cross-platform (macOS Glass, Windows asterisk)."""
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["afplay", "/System/Library/Sounds/Glass.aiff"], stderr=subprocess.DEVNULL)
+        elif sys.platform == "win32":
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────
 # Popup thông báo hoàn tất nén ảnh
 # ─────────────────────────────────────────────────────────────
 
 class CompressCompletionModal(ctk.CTkToplevel):
-    """Popup thông báo nén ảnh hoàn tất theo chuẩn giao diện Apple macOS."""
+    """Popup thông báo nén ảnh hoàn tất theo chuẩn giao diện Apple macOS & Windows."""
 
     def __init__(
         self,
@@ -90,20 +117,25 @@ class CompressCompletionModal(ctk.CTkToplevel):
 
         self.out_dir = out_dir
 
-        self.transient(parent)
+        top = parent.winfo_toplevel() if hasattr(parent, "winfo_toplevel") else parent
+        try:
+            self.transient(top)
+        except Exception:
+            pass
         self.lift()
         self.grab_set()
         self.focus_force()
         try:
             self.attributes("-topmost", True)
+            self.after(500, lambda: self.attributes("-topmost", False) if self.winfo_exists() else None)
         except Exception:
             pass
 
         # Căn giữa cửa sổ con so với cửa sổ cha
         try:
             self.update_idletasks()
-            px = parent.winfo_rootx() + (parent.winfo_width() - 520) // 2
-            py = parent.winfo_rooty() + (parent.winfo_height() - 450) // 2
+            px = top.winfo_rootx() + (top.winfo_width() - 520) // 2
+            py = top.winfo_rooty() + (top.winfo_height() - 450) // 2
             self.geometry(f"+{max(0, px)}+{max(0, py)}")
         except Exception:
             pass
@@ -220,12 +252,19 @@ class CompressCompletionModal(ctk.CTkToplevel):
 
     def _open_folder(self):
         if os.path.isdir(self.out_dir):
-            if sys.platform == "darwin":
-                subprocess.Popen(["open", self.out_dir])
-            elif sys.platform == "win32":
-                subprocess.Popen(["explorer", self.out_dir])
-            else:
-                subprocess.Popen(["xdg-open", self.out_dir])
+            try:
+                if sys.platform == "darwin":
+                    subprocess.Popen(["open", self.out_dir])
+                elif sys.platform == "win32":
+                    norm_path = os.path.normpath(str(self.out_dir))
+                    try:
+                        os.startfile(norm_path)
+                    except Exception:
+                        subprocess.Popen(["explorer", norm_path])
+                else:
+                    subprocess.Popen(["xdg-open", self.out_dir])
+            except Exception:
+                pass
         self.destroy()
 
 
@@ -258,6 +297,12 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self.lift()
         self.focus_force()
 
+        # Lắng nghe sự kiện đóng cửa sổ để lưu cấu hình
+        try:
+            self.protocol("WM_DELETE_WINDOW", self._on_dialog_close)
+        except Exception:
+            pass
+
         # Mặc định mở toàn màn hình (maximized) khi mở cửa sổ
         self.after(50, self._maximize_window)
 
@@ -270,6 +315,14 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
         if initial_files:
             self._add_paths(initial_files)
+
+    def _on_dialog_close(self):
+        """Lưu toàn bộ cài đặt trước khi đóng dialog."""
+        try:
+            self._save_img_settings()
+        except Exception:
+            pass
+        self.destroy()
 
     def _init_state(self):
         """Khởi tạo toàn bộ biến trạng thái từ config đã lưu (hoặc giá trị mặc định)."""
@@ -298,39 +351,81 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._timer_after_id = None
         self._save_settings_timer = None
 
-        # ── Compress state (load từ config) ──
-        self._compress_enabled = ctk.BooleanVar(value=bool(cfg.get("img_compress_enabled", True)))
-        self._target_var = ctk.StringVar(value=str(cfg.get("img_target_value", "500")))
-        self._unit_var = ctk.StringVar(value=str(cfg.get("img_target_unit", "KB")))
-        self._fmt_var = ctk.StringVar(value=str(cfg.get("img_output_format", "Tự động")))
-        self._exif_var = ctk.BooleanVar(value=bool(cfg.get("img_keep_exif", True)))
+        # ── Compress state (load từ config: hỗ trợ cả flat keys và nested dict) ──
+        img_cfg = cfg.get("image_compressor", {}) if isinstance(cfg.get("image_compressor"), dict) else {}
 
-        _saved_out = str(cfg.get("img_output_dir", "")).strip()
+        def _get_cfg_val(flat_key, nested_key, default):
+            if nested_key in img_cfg:
+                return img_cfg[nested_key]
+            if flat_key in cfg:
+                return cfg[flat_key]
+            return default
+
+        self._compress_enabled = ctk.BooleanVar(value=bool(_get_cfg_val("img_compress_enabled", "compress_enabled", True)))
+        self._target_var = ctk.StringVar(value=str(_get_cfg_val("img_target_value", "target_value", "500")))
+        self._unit_var = ctk.StringVar(value=str(_get_cfg_val("img_target_unit", "target_unit", "KB")))
+        self._fmt_var = ctk.StringVar(value=str(_get_cfg_val("img_output_format", "output_format", "Tự động")))
+        self._exif_var = ctk.BooleanVar(value=bool(_get_cfg_val("img_keep_exif", "keep_exif", True)))
+
+        _saved_out = str(_get_cfg_val("img_output_dir", "output_dir", "")).strip()
         default_out = _saved_out if _saved_out else str(Path.home() / "Downloads" / "compressed_images")
         self._out_dir_var = ctk.StringVar(value=default_out)
 
-        # ── Watermark state (load từ config) ──
-        self._wm_logo_enabled  = ctk.BooleanVar(value=bool(cfg.get("img_wm_logo_enabled", False)))
-        self._wm_logo_path     = ctk.StringVar(value=str(cfg.get("img_wm_logo_path", "")))
-        self._wm_logo_scale    = ctk.DoubleVar(value=float(cfg.get("img_wm_logo_scale", 0.15)))
-        self._wm_logo_pos      = ctk.StringVar(value=str(cfg.get("img_wm_logo_pos", "Góc phải dưới")))
-        self._wm_logo_opacity  = ctk.IntVar(value=int(cfg.get("img_wm_logo_opacity", 100)))
-        self._wm_logo_offset_x = ctk.DoubleVar(value=float(cfg.get("img_wm_logo_offset_x", 0.0)))
-        self._wm_logo_offset_y = ctk.DoubleVar(value=float(cfg.get("img_wm_logo_offset_y", 0.0)))
+        # Bảng ánh xạ vị trí tiếng Anh sang tiếng Việt nếu file lưu chuẩn cũ
+        _REV_POS_MAP = {
+            "top-left": "Góc trái trên", "topleft": "Góc trái trên",
+            "top-right": "Góc phải trên", "topright": "Góc phải trên",
+            "bottom-left": "Góc trái dưới", "bottomleft": "Góc trái dưới",
+            "bottom-right": "Góc phải dưới", "bottomright": "Góc phải dưới",
+            "center": "Giữa",
+        }
 
-        self._wm_text_enabled  = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_enabled", False)))
-        self._wm_text_source   = ctk.StringVar(value=str(cfg.get("img_wm_text_source", "Tên file ảnh")))
-        self._wm_text_custom   = ctk.StringVar(value=str(cfg.get("img_wm_text_custom", "")))
-        self._wm_text_pos      = ctk.StringVar(value=str(cfg.get("img_wm_text_pos", "Góc trái dưới")))
-        self._wm_text_size     = ctk.IntVar(value=int(cfg.get("img_wm_text_size", 20)))
-        self._wm_text_color    = str(cfg.get("img_wm_text_color", "#000000"))
-        self._wm_text_bold     = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_bold", False)))
-        self._wm_text_shadow   = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_shadow", False)))
-        self._wm_text_box      = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_box", False)))
-        self._wm_text_box_color= str(cfg.get("img_wm_text_box_color", "#000000"))
-        self._wm_text_box_opacity = ctk.IntVar(value=int(cfg.get("img_wm_text_box_opacity", 60)))
-        self._wm_text_offset_x = ctk.DoubleVar(value=float(cfg.get("img_wm_text_offset_x", 0.0)))
-        self._wm_text_offset_y = ctk.DoubleVar(value=float(cfg.get("img_wm_text_offset_y", 0.0)))
+        # ── Watermark state (load từ config) ──
+        self._wm_logo_enabled  = ctk.BooleanVar(value=bool(_get_cfg_val("img_wm_logo_enabled", "logo_enabled", False)))
+        self._wm_logo_path     = ctk.StringVar(value=str(_get_cfg_val("img_wm_logo_path", "logo_path", "")))
+        self._wm_logo_scale    = ctk.DoubleVar(value=float(_get_cfg_val("img_wm_logo_scale", "logo_scale", 0.15)))
+        _saved_lpos = str(_get_cfg_val("img_wm_logo_pos", "logo_pos", "Góc phải dưới"))
+        self._wm_logo_pos      = ctk.StringVar(value=_REV_POS_MAP.get(_saved_lpos, _saved_lpos))
+        _raw_lop = float(_get_cfg_val("img_wm_logo_opacity", "logo_opacity", 100))
+        if 0 < _raw_lop <= 1.0:
+            _raw_lop *= 100
+        self._wm_logo_opacity  = ctk.IntVar(value=int(round(_raw_lop)))
+
+        _raw_loffx = float(_get_cfg_val("img_wm_logo_offset_x", "logo_offset_x", 0.0))
+        if abs(_raw_loffx) > 1.0:
+            _raw_loffx /= 100.0
+        self._wm_logo_offset_x = ctk.DoubleVar(value=_raw_loffx)
+
+        _raw_loffy = float(_get_cfg_val("img_wm_logo_offset_y", "logo_offset_y", 0.0))
+        if abs(_raw_loffy) > 1.0:
+            _raw_loffy /= 100.0
+        self._wm_logo_offset_y = ctk.DoubleVar(value=_raw_loffy)
+
+        self._wm_text_enabled  = ctk.BooleanVar(value=bool(_get_cfg_val("img_wm_text_enabled", "text_enabled", False)))
+        self._wm_text_source   = ctk.StringVar(value=str(_get_cfg_val("img_wm_text_source", "text_source", "Tên file ảnh")))
+        self._wm_text_custom   = ctk.StringVar(value=str(_get_cfg_val("img_wm_text_custom", "text_custom", "")))
+        _saved_tpos = str(_get_cfg_val("img_wm_text_pos", "text_pos", "Góc trái dưới"))
+        self._wm_text_pos      = ctk.StringVar(value=_REV_POS_MAP.get(_saved_tpos, _saved_tpos))
+        self._wm_text_size     = ctk.IntVar(value=int(_get_cfg_val("img_wm_text_size", "text_size", 20)))
+        self._wm_text_color    = str(_get_cfg_val("img_wm_text_color", "text_color", "#000000"))
+        self._wm_text_bold     = ctk.BooleanVar(value=bool(_get_cfg_val("img_wm_text_bold", "text_bold", False)))
+        self._wm_text_shadow   = ctk.BooleanVar(value=bool(_get_cfg_val("img_wm_text_shadow", "text_shadow", False)))
+        self._wm_text_box      = ctk.BooleanVar(value=bool(_get_cfg_val("img_wm_text_box", "text_box", False)))
+        self._wm_text_box_color= str(_get_cfg_val("img_wm_text_box_color", "text_box_color", "#000000"))
+        _raw_bop = float(_get_cfg_val("img_wm_text_box_opacity", "box_opacity", 60))
+        if 0 < _raw_bop <= 1.0:
+            _raw_bop *= 100
+        self._wm_text_box_opacity = ctk.IntVar(value=int(round(_raw_bop)))
+
+        _raw_toffx = float(_get_cfg_val("img_wm_text_offset_x", "text_offset_x", 0.0))
+        if abs(_raw_toffx) > 1.0:
+            _raw_toffx /= 100.0
+        self._wm_text_offset_x = ctk.DoubleVar(value=_raw_toffx)
+
+        _raw_toffy = float(_get_cfg_val("img_wm_text_offset_y", "text_offset_y", 0.0))
+        if abs(_raw_toffy) > 1.0:
+            _raw_toffy /= 100.0
+        self._wm_text_offset_y = ctk.DoubleVar(value=_raw_toffy)
 
         # ── Preview state & Cache ──
         self._current_preview_index = 0
@@ -359,14 +454,18 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         for v in _tracked_vars:
             v.trace_add("write", lambda *_: self._schedule_save_settings())
 
-    def _schedule_save_settings(self):
-        """Debounce tự động lưu cài đặt sau 100ms để tối ưu hiệu năng."""
+    def _schedule_save_settings(self, now: bool = False):
+        """Tự động lưu cài đặt (ngay lập tức hoặc debounce 50ms)."""
         if hasattr(self, "_save_settings_timer") and self._save_settings_timer:
             try:
                 self.after_cancel(self._save_settings_timer)
             except Exception:
                 pass
-        self._save_settings_timer = self.after(100, self._save_img_settings)
+            self._save_settings_timer = None
+        if now:
+            self._save_img_settings()
+        else:
+            self._save_settings_timer = self.after(50, self._save_img_settings)
 
 
     def _maximize_window(self):
@@ -817,6 +916,14 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._result_box.grid(row=3, column=0, sticky="nsew", padx=14, pady=(0, 10))
         self._result_box.configure(state="disabled")
 
+        # Đồng bộ giao diện chuẩn xác theo các giá trị cấu hình đã khôi phục
+        try:
+            self._on_compress_toggle()
+            self._on_text_source_change(self._wm_text_source.get())
+            self._update_action_button_label()
+        except Exception:
+            pass
+
     # ─────────────────────────────────────────────────────────
     # Preview Sidebar (Panel Xem Trước Phía Bên Phải)
     # ─────────────────────────────────────────────────────────
@@ -1048,8 +1155,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         logo_scale_row.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 2))
         ctk.CTkLabel(logo_scale_row, text="Kích thước:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=70, anchor="w").pack(side="left")
+        _scale_init = int(float(self._wm_logo_scale.get()) * 100)
         self._logo_scale_lbl = ctk.CTkLabel(
-            logo_scale_row, text="15%",
+            logo_scale_row, text=f"{_scale_init}%",
             font=("Consolas", 10, "bold"), text_color=APPLE_CYAN, width=36
         )
         self._logo_scale_lbl.pack(side="right")
@@ -1082,8 +1190,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         logo_op_row.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 4))
         ctk.CTkLabel(logo_op_row, text="Opacity:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=70, anchor="w").pack(side="left")
+        _op_init = int(float(self._wm_logo_opacity.get()))
         self._logo_op_lbl = ctk.CTkLabel(
-            logo_op_row, text="100%",
+            logo_op_row, text=f"{_op_init}%",
             font=("Consolas", 10, "bold"), text_color=APPLE_CYAN, width=36
         )
         self._logo_op_lbl.pack(side="right")
@@ -1102,8 +1211,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         logo_offx_row.grid(row=5, column=0, sticky="ew", padx=10, pady=(0, 2))
         ctk.CTkLabel(logo_offx_row, text="Lệch X:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=70, anchor="w").pack(side="left")
+        _offx_init = int(float(self._wm_logo_offset_x.get()) * 100)
         self._logo_offx_lbl = ctk.CTkLabel(
-            logo_offx_row, text="0%",
+            logo_offx_row, text=f"{_offx_init:+d}%",
             font=("Consolas", 10, "bold"), text_color=APPLE_CYAN, width=36
         )
         self._logo_offx_lbl.pack(side="right")
@@ -1122,8 +1232,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         logo_offy_row.grid(row=6, column=0, sticky="ew", padx=10, pady=(0, 10))
         ctk.CTkLabel(logo_offy_row, text="Lệch Y:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=70, anchor="w").pack(side="left")
+        _offy_init = int(float(self._wm_logo_offset_y.get()) * 100)
         self._logo_offy_lbl = ctk.CTkLabel(
-            logo_offy_row, text="0%",
+            logo_offy_row, text=f"{_offy_init:+d}%",
             font=("Consolas", 10, "bold"), text_color=APPLE_CYAN, width=36
         )
         self._logo_offy_lbl.pack(side="right")
@@ -1203,8 +1314,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         size_row.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 2))
         ctk.CTkLabel(size_row, text="Cỡ chữ:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=50, anchor="w").pack(side="left")
+        _tsize_init = int(float(self._wm_text_size.get()))
         self._text_size_lbl = ctk.CTkLabel(
-            size_row, text="20",
+            size_row, text=str(_tsize_init),
             font=("Consolas", 10, "bold"), text_color=APPLE_ORANGE, width=32
         )
         self._text_size_lbl.pack(side="right")
@@ -1275,8 +1387,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             command=self._pick_box_color,
         )
         self._box_color_btn.pack(side="left", padx=(0, 6))
+        _boxop_init = int(float(self._wm_text_box_opacity.get()))
         self._box_op_lbl = ctk.CTkLabel(
-            box_row, text="60%",
+            box_row, text=f"{_boxop_init}%",
             font=("Consolas", 10, "bold"), text_color=TEXT_SECONDARY, width=32
         )
         self._box_op_lbl.pack(side="right")
@@ -1295,8 +1408,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         text_offx_row.grid(row=7, column=0, sticky="ew", padx=10, pady=(0, 2))
         ctk.CTkLabel(text_offx_row, text="Lệch X:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=70, anchor="w").pack(side="left")
+        _toffx_init = int(float(self._wm_text_offset_x.get()) * 100)
         self._text_offx_lbl = ctk.CTkLabel(
-            text_offx_row, text="0%",
+            text_offx_row, text=f"{_toffx_init:+d}%",
             font=("Consolas", 10, "bold"), text_color=APPLE_ORANGE, width=36
         )
         self._text_offx_lbl.pack(side="right")
@@ -1315,8 +1429,9 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         text_offy_row.grid(row=8, column=0, sticky="ew", padx=10, pady=(0, 10))
         ctk.CTkLabel(text_offy_row, text="Lệch Y:",
                      font=("Arial", 10), text_color=TEXT_SECONDARY, width=70, anchor="w").pack(side="left")
+        _toffy_init = int(float(self._wm_text_offset_y.get()) * 100)
         self._text_offy_lbl = ctk.CTkLabel(
-            text_offy_row, text="0%",
+            text_offy_row, text=f"{_toffy_init:+d}%",
             font=("Consolas", 10, "bold"), text_color=APPLE_ORANGE, width=36
         )
         self._text_offy_lbl.pack(side="right")
@@ -1467,6 +1582,36 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             cfg["img_wm_text_offset_x"] = float(self._wm_text_offset_x.get())
             cfg["img_wm_text_offset_y"] = float(self._wm_text_offset_y.get())
 
+            # Đồng bộ cả sub-dictionary "image_compressor" để tương thích tối đa
+            cfg["image_compressor"] = {
+                "compress_enabled": cfg["img_compress_enabled"],
+                "target_value": cfg["img_target_value"],
+                "target_unit": cfg["img_target_unit"],
+                "output_format": cfg["img_output_format"],
+                "keep_exif": cfg["img_keep_exif"],
+                "output_dir": cfg["img_output_dir"],
+                "logo_enabled": cfg["img_wm_logo_enabled"],
+                "logo_path": cfg["img_wm_logo_path"],
+                "logo_scale": cfg["img_wm_logo_scale"],
+                "logo_pos": cfg["img_wm_logo_pos"],
+                "logo_opacity": cfg["img_wm_logo_opacity"],
+                "logo_offset_x": cfg["img_wm_logo_offset_x"],
+                "logo_offset_y": cfg["img_wm_logo_offset_y"],
+                "text_enabled": cfg["img_wm_text_enabled"],
+                "text_source": cfg["img_wm_text_source"],
+                "text_custom": cfg["img_wm_text_custom"],
+                "text_pos": cfg["img_wm_text_pos"],
+                "text_size": cfg["img_wm_text_size"],
+                "text_color": cfg["img_wm_text_color"],
+                "text_bold": cfg["img_wm_text_bold"],
+                "text_shadow": cfg["img_wm_text_shadow"],
+                "text_box": cfg["img_wm_text_box"],
+                "text_box_color": cfg["img_wm_text_box_color"],
+                "text_box_opacity": cfg["img_wm_text_box_opacity"],
+                "text_offset_x": cfg["img_wm_text_offset_x"],
+                "text_offset_y": cfg["img_wm_text_offset_y"],
+            }
+
             # Cập nhật config của cửa sổ chính (AppWindow / Toplevel) nếu có
             try:
                 top = self.winfo_toplevel()
@@ -1521,12 +1666,19 @@ class ImageCompressorDialog(ctk.CTkToplevel):
     def _open_out_dir(self):
         out = self._out_dir_var.get()
         if os.path.isdir(out):
-            if sys.platform == "darwin":
-                subprocess.Popen(["open", out])
-            elif sys.platform == "win32":
-                subprocess.Popen(["explorer", out])
-            else:
-                subprocess.Popen(["xdg-open", out])
+            try:
+                if sys.platform == "darwin":
+                    subprocess.Popen(["open", out])
+                elif sys.platform == "win32":
+                    norm_path = os.path.normpath(str(out))
+                    try:
+                        os.startfile(norm_path)
+                    except Exception:
+                        subprocess.Popen(["explorer", norm_path])
+                else:
+                    subprocess.Popen(["xdg-open", out])
+            except Exception:
+                pass
 
     def _get_target_kb(self) -> int:
         try:
@@ -2067,16 +2219,16 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         if compress_on:
             summary_line = (
                 f"📊 Kết quả: {ok} thành công, {fail} thất bại  |  "
-                f"Gốc: {self._fmt_kb(total_src)}  →  Sau: {self._fmt_kb(total_dst)}  "
-                f"|  Tiết kiệm: {self._fmt_kb(saved)} (-{red_pct:.1f}%)"
+                f"Gốc: {_fmt_kb(total_src)}  →  Sau: {_fmt_kb(total_dst)}  "
+                f"|  Tiết kiệm: {_fmt_kb(saved)} (-{red_pct:.1f}%)"
             )
             action_tag = "Nén ảnh"
-            stat = f"✅ {ok}/{len(results)} ảnh  •  ⏱️ {elapsed_str}  •  Tiết kiệm {self._fmt_kb(saved)}"
+            stat = f"✅ {ok}/{len(results)} ảnh  •  ⏱️ {elapsed_str}  •  Tiết kiệm {_fmt_kb(saved)}"
             status_text = f"🎉 Hoàn tất trong {elapsed_str}! {ok} ảnh nén thành công vào: {self._out_dir_var.get()}"
         else:
             summary_line = (
                 f"📊 Kết quả: {ok} thành công, {fail} thất bại  |  "
-                f"Tổng dung lượng xuất: {self._fmt_kb(total_dst)}  |  "
+                f"Tổng dung lượng xuất: {_fmt_kb(total_dst)}  |  "
                 f"Chất lượng: Giữ nguyên 100% gốc (Không nén)"
             )
             action_tag = "Đóng dấu ảnh"
@@ -2098,36 +2250,34 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._lbl_status.configure(text=status_text, text_color=APPLE_GREEN)
 
         # Hiển thị Banner Card thông báo thành công rực rỡ ngay trên giao diện
-        self._show_success_banner(ok, len(results), self._fmt_kb(saved), red_pct, elapsed_str, compress_on)
+        self._show_success_banner(ok, len(results), _fmt_kb(saved), red_pct, elapsed_str, compress_on)
 
-        # Phát âm thanh thông báo trên macOS
-        if sys.platform == "darwin":
+        # Phát âm thanh thông báo hệ thống cross-platform (macOS / Windows)
+        _play_system_sound()
+
+        # Hiển thị Popup hoàn tất nổi bật cho người dùng sau 200ms
+        def _launch_modal():
             try:
-                subprocess.Popen(["afplay", "/System/Library/Sounds/Glass.aiff"], stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
+                # Dùng winfo_toplevel() để luôn lấy cửa sổ gốc (hoạt động đúng cả Frame và Toplevel)
+                _modal_parent = self.winfo_toplevel()
+                modal = CompressCompletionModal(
+                    _modal_parent,
+                    ok_count=ok,
+                    total_count=len(results),
+                    src_size_str=_fmt_kb(total_src),
+                    dst_size_str=_fmt_kb(total_dst),
+                    saved_str=_fmt_kb(saved),
+                    reduction_pct=red_pct,
+                    out_dir=self._out_dir_var.get(),
+                    is_compress_mode=compress_on,
+                    elapsed_str=elapsed_str,
+                )
+                modal.lift()
+                modal.focus_force()
+            except Exception as e:
+                print(f"[CompressorView] Completion modal error: {e}")
 
-        # Hiển thị Popup hoàn tất nổi bật cho người dùng
-        try:
-            # Dùng winfo_toplevel() để luôn lấy cửa sổ gốc
-            # (hoạt động đúng cả khi self là CTkFrame hay CTkToplevel)
-            _modal_parent = self.winfo_toplevel()
-            modal = CompressCompletionModal(
-                _modal_parent,
-                ok_count=ok,
-                total_count=len(results),
-                src_size_str=self._fmt_kb(total_src),
-                dst_size_str=self._fmt_kb(total_dst),
-                saved_str=self._fmt_kb(saved),
-                reduction_pct=red_pct,
-                out_dir=self._out_dir_var.get(),
-                is_compress_mode=compress_on,
-                elapsed_str=elapsed_str,
-            )
-            modal.lift()
-            modal.focus_force()
-        except Exception as e:
-            print(f"[CompressorView] Completion modal error: {e}")
+        self.after(200, _launch_modal)
 
 
     # ─────────────────────────────────────────────────────────
@@ -2151,9 +2301,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
     @staticmethod
     def _fmt_kb(kb: float) -> str:
-        if kb >= 1024:
-            return f"{kb/1024:.2f} MB"
-        return f"{kb:.0f} KB"
+        return _fmt_kb(kb)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2242,7 +2390,7 @@ class ImageCompressorView(ctk.CTkFrame):
     _finalize             = ImageCompressorDialog._finalize
     _log_result           = ImageCompressorDialog._log_result
     _clear_results        = ImageCompressorDialog._clear_results
-    _fmt_kb               = ImageCompressorDialog._fmt_kb
+    _fmt_kb               = staticmethod(_fmt_kb)
 
     def add_initial_files(self, files: List[str]):
         """Nạp danh sách ảnh vào view (dùng khi kéo thả từ Main App)."""
