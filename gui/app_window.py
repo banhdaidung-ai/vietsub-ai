@@ -27,7 +27,7 @@ from gui.audio_separator_dialog import AudioSeparatorDialog
 from gui.guide_view import GuideView
 from gui.home_view import HomeView
 from gui.gdrive_download_dialog import GDriveDownloadDialog
-from gui.image_compressor_dialog import ImageCompressorDialog
+from gui.image_compressor_dialog import ImageCompressorDialog, ImageCompressorView
 from gui.donate_dialog import DonateDialog
 from utils.config import get_output_dir, load_config, save_config
 from utils.ffmpeg_check import check_ffmpeg, get_ffmpeg_path
@@ -462,10 +462,15 @@ class AppWindow(_BaseWindow):
         )
         self.home_view.grid(row=0, column=0, sticky="nsew")
 
+        # ── View Image Compressor (nhúng vào main canvas) ──
+        self.compressor_view = ImageCompressorView(self.main_canvas)
+        # Không grid lên ngay — chỉ hiển thị khi user click sidebar
+
         # ── View 2: Vietsub Studio Container ──
         self.vietsub_container = ctk.CTkFrame(self.main_canvas, fg_color="transparent")
         self.vietsub_container.grid_columnconfigure(0, weight=1)
         self.vietsub_container.grid_rowconfigure(3, weight=1)
+
 
         # ═════════════════════════════════════════════════════════
         # 3. INPUT SECTION (NGUỒN VIDEO / LINK ONLINE)
@@ -1417,15 +1422,17 @@ class AppWindow(_BaseWindow):
 
         ext = Path(first_file).suffix.lower()
 
-        # Kiểm tra nếu là file ảnh -> Tự động mở trình nén ảnh thông minh
+        # Kiểm tra nếu là file ảnh -> Chuyển sang tab Nén Ảnh ở ngay trong app
         image_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
         image_files = [f for f in files if Path(f).suffix.lower() in image_exts]
         if image_files:
             self._log_msg(f"🖼️ Đã nhận {len(image_files)} tệp hình ảnh kéo thả. Đang mở trình nén ảnh...")
             try:
-                ImageCompressorDialog(self, initial_files=image_files)
+                self._on_sidebar_select("compressor")
+                if hasattr(self, "compressor_view"):
+                    self.compressor_view.add_initial_files(image_files)
             except Exception as e:
-                self._log_msg(f"❌ Không thể mở trình nén ảnh: {e}")
+                self._log_msg(f"❌ Không thể nạp ảnh vào trình nén: {e}")
             return
 
         # Nếu là file phụ đề .srt, hỗ trợ mở trực tiếp trình chỉnh sửa phụ đề
@@ -1581,7 +1588,8 @@ class AppWindow(_BaseWindow):
             self._on_separate_audio_clicked()
 
         elif key == "compressor":
-            self._on_compress_images_clicked()
+            self._show_canvas_view("compressor")
+            self._select_sidebar_key("compressor")
 
         elif key == "sub_editor":
             self._open_standalone_editor()
@@ -1611,7 +1619,7 @@ class AppWindow(_BaseWindow):
                 )
 
     def _show_canvas_view(self, view_name: str):
-        """Chuyển đổi các view trên Main Canvas: 'home', 'vietsub', 'guide'."""
+        """Chuyển đổi các view trên Main Canvas: 'home', 'vietsub', 'guide', 'compressor'."""
         self._current_canvas_view = view_name
 
         if hasattr(self, "home_view"):
@@ -1620,6 +1628,8 @@ class AppWindow(_BaseWindow):
             self.vietsub_container.grid_remove()
         if hasattr(self, "guide_view"):
             self.guide_view.grid_remove()
+        if hasattr(self, "compressor_view"):
+            self.compressor_view.grid_remove()
 
         if view_name == "home":
             if hasattr(self, "home_view"):
@@ -1630,6 +1640,9 @@ class AppWindow(_BaseWindow):
         elif view_name == "guide":
             if hasattr(self, "guide_view"):
                 self.guide_view.grid(row=0, column=0, sticky="nsew")
+        elif view_name == "compressor":
+            if hasattr(self, "compressor_view"):
+                self.compressor_view.grid(row=0, column=0, sticky="nsew")
 
     def _switch_to_tab(self, tab_name: str):
         """Hỗ trợ tương thích ngược cho các lời gọi _switch_to_tab cũ."""
@@ -2341,8 +2354,11 @@ class AppWindow(_BaseWindow):
         threading.Thread(target=run_audio_dl, daemon=True).start()
 
     def _on_compress_images_clicked(self, initial_files=None):
-        """Mở hộp thoại nén ảnh hàng loạt thông minh."""
-        ImageCompressorDialog(self, initial_files=initial_files)
+        """Chuyển sang view Nén Ảnh Hàng Loạt nhúng trong app chính."""
+        self._show_canvas_view("compressor")
+        self._select_sidebar_key("compressor")
+        if initial_files and hasattr(self, "compressor_view"):
+            self.compressor_view.add_initial_files(initial_files)
 
     def _on_gdrive_download_clicked(self, initial_url: str = ""):
         """Mở hộp thoại tải file và thư mục Google Drive trực tiếp (không zip, Singleton)."""

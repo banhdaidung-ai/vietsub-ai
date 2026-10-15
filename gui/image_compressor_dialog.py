@@ -1,7 +1,7 @@
 """
-gui/image_compressor_dialog.py — Dialog nén ảnh hàng loạt thông minh
+gui/image_compressor_dialog.py — Nén ảnh hàng loạt thông minh
 Thiết kế theo ngôn ngữ Apple macOS Dark Mode của Vietsub AI Studio.
-Tích hợp popup thông báo hoàn tất và đồng bộ log ra Studio Terminal.
+Tích hợp: View nhúng vào app chính, popup hoàn tất, đồng bộ log, lưu/khôi phục cài đặt.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from core.image_compressor import (
     build_output_path,
     scan_images,
 )
+from utils.config import load_config, save_config
 
 # ── Reuse design tokens from app_window ──
 BG_WINDOW   = "#141518"
@@ -261,6 +262,22 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         # Mặc định mở toàn màn hình (maximized) khi mở cửa sổ
         self.after(50, self._maximize_window)
 
+        self._init_state()
+        self._build_ui()
+        self._setup_dnd()
+
+        self._msg_queue = queue.Queue()
+        self.after(50, self._poll_queue)
+
+        if initial_files:
+            self._add_paths(initial_files)
+
+    def _init_state(self):
+        """Khởi tạo toàn bộ biến trạng thái từ config đã lưu (hoặc giá trị mặc định)."""
+        # Đọc config của parent nếu có, không thì load fresh
+        cfg = getattr(self.parent, "config", None) or load_config()
+        self._app_config = cfg
+
         self._engine = ImageCompressorEngine()
         self._is_running = False
         self._image_paths: List[str] = []      # Danh sách ảnh đã thêm
@@ -271,31 +288,31 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._timer_running = False
         self._timer_after_id = None
 
-        # ── Compress state ──
-        self._compress_enabled = ctk.BooleanVar(value=True)
+        # ── Compress state (load từ config) ──
+        self._compress_enabled = ctk.BooleanVar(value=bool(cfg.get("img_compress_enabled", True)))
 
-        # ── Watermark state ──
-        self._wm_logo_enabled  = ctk.BooleanVar(value=False)
-        self._wm_logo_path     = ctk.StringVar(value="")
-        self._wm_logo_scale    = ctk.DoubleVar(value=0.15)
-        self._wm_logo_pos      = ctk.StringVar(value="Góc phải dưới")
-        self._wm_logo_opacity  = ctk.IntVar(value=100)
-        self._wm_logo_offset_x = ctk.DoubleVar(value=0.0)
-        self._wm_logo_offset_y = ctk.DoubleVar(value=0.0)
+        # ── Watermark state (load từ config) ──
+        self._wm_logo_enabled  = ctk.BooleanVar(value=bool(cfg.get("img_wm_logo_enabled", False)))
+        self._wm_logo_path     = ctk.StringVar(value=str(cfg.get("img_wm_logo_path", "")))
+        self._wm_logo_scale    = ctk.DoubleVar(value=float(cfg.get("img_wm_logo_scale", 0.15)))
+        self._wm_logo_pos      = ctk.StringVar(value=str(cfg.get("img_wm_logo_pos", "Góc phải dưới")))
+        self._wm_logo_opacity  = ctk.IntVar(value=int(cfg.get("img_wm_logo_opacity", 100)))
+        self._wm_logo_offset_x = ctk.DoubleVar(value=float(cfg.get("img_wm_logo_offset_x", 0.0)))
+        self._wm_logo_offset_y = ctk.DoubleVar(value=float(cfg.get("img_wm_logo_offset_y", 0.0)))
 
-        self._wm_text_enabled  = ctk.BooleanVar(value=False)
-        self._wm_text_source   = ctk.StringVar(value="Tên file ảnh")
-        self._wm_text_custom   = ctk.StringVar(value="")
-        self._wm_text_pos      = ctk.StringVar(value="Góc trái dưới")
-        self._wm_text_size     = ctk.IntVar(value=20)
-        self._wm_text_color    = "#000000"  # Mặc định màu đen theo yêu cầu
-        self._wm_text_bold     = ctk.BooleanVar(value=False)
-        self._wm_text_shadow   = ctk.BooleanVar(value=False)
-        self._wm_text_box      = ctk.BooleanVar(value=False)
-        self._wm_text_box_color= "#000000"
-        self._wm_text_box_opacity = ctk.IntVar(value=60)
-        self._wm_text_offset_x = ctk.DoubleVar(value=0.0)
-        self._wm_text_offset_y = ctk.DoubleVar(value=0.0)
+        self._wm_text_enabled  = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_enabled", False)))
+        self._wm_text_source   = ctk.StringVar(value=str(cfg.get("img_wm_text_source", "Tên file ảnh")))
+        self._wm_text_custom   = ctk.StringVar(value=str(cfg.get("img_wm_text_custom", "")))
+        self._wm_text_pos      = ctk.StringVar(value=str(cfg.get("img_wm_text_pos", "Góc trái dưới")))
+        self._wm_text_size     = ctk.IntVar(value=int(cfg.get("img_wm_text_size", 20)))
+        self._wm_text_color    = str(cfg.get("img_wm_text_color", "#000000"))
+        self._wm_text_bold     = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_bold", False)))
+        self._wm_text_shadow   = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_shadow", False)))
+        self._wm_text_box      = ctk.BooleanVar(value=bool(cfg.get("img_wm_text_box", False)))
+        self._wm_text_box_color= str(cfg.get("img_wm_text_box_color", "#000000"))
+        self._wm_text_box_opacity = ctk.IntVar(value=int(cfg.get("img_wm_text_box_opacity", 60)))
+        self._wm_text_offset_x = ctk.DoubleVar(value=float(cfg.get("img_wm_text_offset_x", 0.0)))
+        self._wm_text_offset_y = ctk.DoubleVar(value=float(cfg.get("img_wm_text_offset_y", 0.0)))
 
         # ── Preview state & Cache ──
         self._current_preview_index = 0
@@ -308,14 +325,11 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         self._preview_zoom_factor = 1.0 # 1.0 = Fit vừa vặn khung nhìn
         self._preview_zoom_var = ctk.DoubleVar(value=1.0)
 
-        self._build_ui()
-        self._setup_dnd()
+        # ── Auto-save traces cho các trường nhập văn bản ──
+        # (các nút và switch đã gọi _save_img_settings() trực tiếp)
+        self._wm_text_custom.trace_add("write", lambda *_: self._save_img_settings())
+        self._wm_logo_path.trace_add("write", lambda *_: self._save_img_settings())
 
-        self._msg_queue = queue.Queue()
-        self.after(50, self._poll_queue)
-
-        if initial_files:
-            self._add_paths(initial_files)
 
     def _maximize_window(self):
         """Mở cửa sổ cực đại / full màn hình theo chuẩn hệ điều hành."""
@@ -554,7 +568,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self._size_grp, text="🎯 Mục tiêu:",
                      font=("Arial", 11, "bold"), text_color=TEXT_PRIMARY).pack(side="left", padx=(0, 6))
 
-        self._target_var = ctk.StringVar(value="500")  # Mặc định 500KB theo yêu cầu
+        self._target_var = ctk.StringVar(value=str(self._app_config.get("img_target_value", "500")))  # Khôi phục từ config
         self._target_entry = ctk.CTkEntry(
             self._size_grp, textvariable=self._target_var,
             width=65, height=28, corner_radius=7,
@@ -564,7 +578,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         )
         self._target_entry.pack(side="left", padx=(0, 4))
 
-        self._unit_var = ctk.StringVar(value="KB")
+        self._unit_var = ctk.StringVar(value=str(self._app_config.get("img_target_unit", "KB")))
         self._unit_menu = ctk.CTkOptionMenu(
             self._size_grp, values=["KB", "MB"], variable=self._unit_var,
             width=62, height=28, corner_radius=7,
@@ -599,7 +613,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(cfg_row_fmt, text="📦 Định dạng xuất:",
                      font=("Arial", 11, "bold"), text_color=TEXT_PRIMARY).pack(side="left", padx=(0, 8))
-        self._fmt_var = ctk.StringVar(value="Tự động")
+        self._fmt_var = ctk.StringVar(value=str(self._app_config.get("img_output_format", "Tự động")))
         ctk.CTkOptionMenu(
             cfg_row_fmt, values=["Tự động", "JPEG", "PNG", "WEBP"],
             variable=self._fmt_var,
@@ -608,7 +622,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             text_color=TEXT_PRIMARY, font=("Arial", 11),
         ).pack(side="left", padx=(0, 16))
 
-        self._exif_var = ctk.BooleanVar(value=True)
+        self._exif_var = ctk.BooleanVar(value=bool(self._app_config.get("img_keep_exif", True)))
         ctk.CTkSwitch(
             cfg_row_fmt, text="Giữ metadata EXIF gốc", variable=self._exif_var,
             font=("Arial", 11), text_color=TEXT_SECONDARY,
@@ -622,7 +636,8 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(cfg_row2, text="📁 Thư mục xuất:",
                      font=("Arial", 12, "bold"), text_color=TEXT_PRIMARY).pack(side="left", padx=(0, 8))
 
-        self._out_dir_var = ctk.StringVar(value=str(Path.home() / "Downloads" / "compressed_images"))
+        _saved_out = str(self._app_config.get("img_output_dir", "")).strip()
+        self._out_dir_var = ctk.StringVar(value=_saved_out if _saved_out else str(Path.home() / "Downloads" / "compressed_images"))
         self._out_entry = ctk.CTkEntry(
             cfg_row2, textvariable=self._out_dir_var,
             height=32, corner_radius=7,
@@ -1261,7 +1276,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
     def _add_files(self):
         import tkinter.filedialog as fd
         files = fd.askopenfilenames(
-            parent=self,
+            parent=self.winfo_toplevel(),
             title="Chọn ảnh để nén",
             filetypes=[("Ảnh", "*.jpg *.jpeg *.png *.webp *.bmp *.tiff *.tif"),
                        ("Tất cả", "*.*")]
@@ -1271,7 +1286,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
     def _add_folder(self):
         import tkinter.filedialog as fd
-        folder = fd.askdirectory(parent=self, title="Chọn thư mục chứa ảnh")
+        folder = fd.askdirectory(parent=self.winfo_toplevel(), title="Chọn thư mục chứa ảnh")
         if folder:
             self._add_paths([folder])
 
@@ -1311,18 +1326,59 @@ class ImageCompressorDialog(ctk.CTkToplevel):
     # Settings Helpers
     # ─────────────────────────────────────────────────────────
 
+    def _save_img_settings(self):
+        """Lưu toàn bộ thông số Image Compressor vào config để khôi phục khi mở lại."""
+        try:
+            cfg = getattr(self, "_app_config", None)
+            if cfg is None:
+                return
+            cfg["img_compress_enabled"] = self._compress_enabled.get()
+            cfg["img_target_value"]     = self._target_var.get()
+            cfg["img_target_unit"]      = self._unit_var.get()
+            cfg["img_output_format"]    = self._fmt_var.get()
+            cfg["img_keep_exif"]        = self._exif_var.get()
+            cfg["img_output_dir"]       = self._out_dir_var.get()
+            cfg["img_wm_logo_enabled"]  = self._wm_logo_enabled.get()
+            cfg["img_wm_logo_path"]     = self._wm_logo_path.get()
+            cfg["img_wm_logo_scale"]    = float(self._wm_logo_scale.get())
+            cfg["img_wm_logo_pos"]      = self._wm_logo_pos.get()
+            cfg["img_wm_logo_opacity"]  = int(self._wm_logo_opacity.get())
+            cfg["img_wm_logo_offset_x"] = float(self._wm_logo_offset_x.get())
+            cfg["img_wm_logo_offset_y"] = float(self._wm_logo_offset_y.get())
+            cfg["img_wm_text_enabled"]  = self._wm_text_enabled.get()
+            cfg["img_wm_text_source"]   = self._wm_text_source.get()
+            cfg["img_wm_text_custom"]   = self._wm_text_custom.get()
+            cfg["img_wm_text_pos"]      = self._wm_text_pos.get()
+            cfg["img_wm_text_size"]     = int(self._wm_text_size.get())
+            cfg["img_wm_text_color"]    = self._wm_text_color
+            cfg["img_wm_text_bold"]     = self._wm_text_bold.get()
+            cfg["img_wm_text_shadow"]   = self._wm_text_shadow.get()
+            cfg["img_wm_text_box"]      = self._wm_text_box.get()
+            cfg["img_wm_text_box_color"]= self._wm_text_box_color
+            cfg["img_wm_text_box_opacity"] = int(self._wm_text_box_opacity.get())
+            cfg["img_wm_text_offset_x"] = float(self._wm_text_offset_x.get())
+            cfg["img_wm_text_offset_y"] = float(self._wm_text_offset_y.get())
+            # Cập nhật config của parent nếu có
+            if hasattr(self.parent, "config"):
+                self.parent.config.update(cfg)
+            save_config(cfg)
+        except Exception:
+            pass
+
     def _set_preset(self, val: str, unit: str):
         self._target_var.set(val)
         self._unit_var.set(unit)
+        self._save_img_settings()
 
     def _on_unit_change(self, _=None):
-        pass
+        self._save_img_settings()
 
     def _browse_out_dir(self):
         import tkinter.filedialog as fd
-        folder = fd.askdirectory(parent=self, title="Chọn thư mục lưu ảnh nén")
+        folder = fd.askdirectory(parent=self.winfo_toplevel(), title="Chọn thư mục lưu ảnh nén")
         if folder:
             self._out_dir_var.set(folder)
+            self._save_img_settings()
 
     def _open_out_dir(self):
         out = self._out_dir_var.get()
@@ -1356,6 +1412,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             self._size_grp.pack_forget()
             self._no_compress_hint.pack(side="left")
         self._update_action_button_label()
+        self._save_img_settings()
 
     def _update_action_button_label(self):
         """Cập nhật nhãn và trạng thái nút Bắt đầu theo ngữ cảnh nén / watermark."""
@@ -1410,6 +1467,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         """Refresh preview và cập nhật trạng thái nút khi bật/tắt watermark."""
         self._update_action_button_label()
         self._schedule_preview()
+        self._save_img_settings()
 
     def _on_text_source_change(self, value: str):
         """Chuyển đổi giao diện giữa lấy tên file tự động và nhập text tuỳ chỉnh."""
@@ -1431,7 +1489,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
     def _browse_logo(self):
         import tkinter.filedialog as fd
         path = fd.askopenfilename(
-            parent=self,
+            parent=self.winfo_toplevel(),
             title="Chọn file logo",
             filetypes=[("Hình ảnh", "*.png *.jpg *.jpeg *.webp *.bmp"),
                        ("Tất cả", "*.*")],
@@ -1441,10 +1499,11 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             self._wm_logo_enabled.set(True)  # Tự động kích hoạt switch logo khi chọn file
             self._update_action_button_label()
             self._schedule_preview()
+            self._save_img_settings()
 
     def _pick_text_color(self):
         import tkinter.colorchooser as cc
-        color = cc.askcolor(color=self._wm_text_color, parent=self, title="Chọn màu chữ")
+        color = cc.askcolor(color=self._wm_text_color, parent=self.winfo_toplevel(), title="Chọn màu chữ")
         if color and color[1]:
             self._wm_text_color = color[1]
             self._text_color_btn.configure(
@@ -1452,10 +1511,11 @@ class ImageCompressorDialog(ctk.CTkToplevel):
                 hover_color=self._wm_text_color,
             )
             self._schedule_preview()
+            self._save_img_settings()
 
     def _pick_box_color(self):
         import tkinter.colorchooser as cc
-        color = cc.askcolor(color=self._wm_text_box_color, parent=self, title="Chọn màu hộp nền")
+        color = cc.askcolor(color=self._wm_text_box_color, parent=self.winfo_toplevel(), title="Chọn màu hộp nền")
         if color and color[1]:
             self._wm_text_box_color = color[1]
             self._box_color_btn.configure(
@@ -1463,6 +1523,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
                 hover_color=self._wm_text_box_color,
             )
             self._schedule_preview()
+            self._save_img_settings()
 
     _POS_MAP = {
         "Góc trái trên": "top-left",
@@ -1906,8 +1967,11 @@ class ImageCompressorDialog(ctk.CTkToplevel):
 
         # Hiển thị Popup hoàn tất nổi bật cho người dùng
         try:
+            # Dùng winfo_toplevel() để luôn lấy cửa sổ gốc
+            # (hoạt động đúng cả khi self là CTkFrame hay CTkToplevel)
+            _modal_parent = self.winfo_toplevel()
             CompressCompletionModal(
-                self,
+                _modal_parent,
                 ok_count=ok,
                 total_count=len(results),
                 src_size_str=self._fmt_kb(total_src),
@@ -1920,6 +1984,7 @@ class ImageCompressorDialog(ctk.CTkToplevel):
             )
         except Exception:
             pass
+
 
     # ─────────────────────────────────────────────────────────
     # Log Helpers
@@ -1945,3 +2010,94 @@ class ImageCompressorDialog(ctk.CTkToplevel):
         if kb >= 1024:
             return f"{kb/1024:.2f} MB"
         return f"{kb:.0f} KB"
+
+
+# ─────────────────────────────────────────────────────────────
+# ImageCompressorView — View nhúng vào Main Canvas (không phải popup)
+# Kế thừa toàn bộ logic từ ImageCompressorDialog nhưng là CTkFrame
+# ─────────────────────────────────────────────────────────────
+
+class ImageCompressorView(ctk.CTkFrame):
+    """
+    View nén ảnh hàng loạt nhúng trực tiếp vào Main Canvas của AppWindow.
+    Giống hệt ImageCompressorDialog về giao diện và logic,
+    nhưng kế thừa CTkFrame thay vì CTkToplevel nên không mở cửa sổ riêng.
+    """
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, fg_color=BG_WINDOW, **kwargs)
+        self.parent = parent
+
+        # Grid fill toàn bộ
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=0, minsize=420)
+        self.grid_rowconfigure(0, weight=1)
+
+        self._init_state()
+        self._build_ui()
+        self._setup_dnd()
+
+        self._msg_queue = queue.Queue()
+        self.after(50, self._poll_queue)
+
+    # ── Tái dùng toàn bộ logic từ ImageCompressorDialog ──
+    _init_state           = ImageCompressorDialog._init_state
+    _save_img_settings    = ImageCompressorDialog._save_img_settings
+    _start_timer          = ImageCompressorDialog._start_timer
+    _tick_timer           = ImageCompressorDialog._tick_timer
+    _stop_timer           = ImageCompressorDialog._stop_timer
+    _poll_queue           = ImageCompressorDialog._poll_queue
+    _log_to_parent        = ImageCompressorDialog._log_to_parent
+    _build_ui             = ImageCompressorDialog._build_ui
+    _build_preview_sidebar= ImageCompressorDialog._build_preview_sidebar
+    _build_watermark_card = ImageCompressorDialog._build_watermark_card
+    _setup_dnd            = ImageCompressorDialog._setup_dnd
+    _on_drag_enter        = ImageCompressorDialog._on_drag_enter
+    _on_drag_leave        = ImageCompressorDialog._on_drag_leave
+    _on_drop              = ImageCompressorDialog._on_drop
+    _add_files            = ImageCompressorDialog._add_files
+    _add_folder           = ImageCompressorDialog._add_folder
+    _add_paths            = ImageCompressorDialog._add_paths
+    _clear_list           = ImageCompressorDialog._clear_list
+    _refresh_file_list    = ImageCompressorDialog._refresh_file_list
+    _set_preset           = ImageCompressorDialog._set_preset
+    _on_unit_change       = ImageCompressorDialog._on_unit_change
+    _browse_out_dir       = ImageCompressorDialog._browse_out_dir
+    _open_out_dir         = ImageCompressorDialog._open_out_dir
+    _get_target_kb        = ImageCompressorDialog._get_target_kb
+    _on_compress_toggle   = ImageCompressorDialog._on_compress_toggle
+    _update_action_button_label = ImageCompressorDialog._update_action_button_label
+    _on_wm_toggle         = ImageCompressorDialog._on_wm_toggle
+    _on_text_source_change= ImageCompressorDialog._on_text_source_change
+    _browse_logo          = ImageCompressorDialog._browse_logo
+    _pick_text_color      = ImageCompressorDialog._pick_text_color
+    _pick_box_color       = ImageCompressorDialog._pick_box_color
+    _POS_MAP              = ImageCompressorDialog._POS_MAP
+    _build_watermark_config = ImageCompressorDialog._build_watermark_config
+    _schedule_preview     = ImageCompressorDialog._schedule_preview
+    _update_filename_hint = ImageCompressorDialog._update_filename_hint
+    _prepare_preview_base = ImageCompressorDialog._prepare_preview_base
+    _refresh_preview      = ImageCompressorDialog._refresh_preview
+    _zoom_to              = ImageCompressorDialog._zoom_to
+    _zoom_in              = ImageCompressorDialog._zoom_in
+    _zoom_out             = ImageCompressorDialog._zoom_out
+    _zoom_fit             = ImageCompressorDialog._zoom_fit
+    _on_zoom_slider       = ImageCompressorDialog._on_zoom_slider
+    _on_view_card_resize  = ImageCompressorDialog._on_view_card_resize
+    _prev_preview_image   = ImageCompressorDialog._prev_preview_image
+    _next_preview_image   = ImageCompressorDialog._next_preview_image
+    _toggle_compare_preview = ImageCompressorDialog._toggle_compare_preview
+    _start                = ImageCompressorDialog._start
+    _cancel               = ImageCompressorDialog._cancel
+    _on_progress          = ImageCompressorDialog._on_progress
+    _on_done              = ImageCompressorDialog._on_done
+    _update_progress      = ImageCompressorDialog._update_progress
+    _finalize             = ImageCompressorDialog._finalize
+    _log_result           = ImageCompressorDialog._log_result
+    _clear_results        = ImageCompressorDialog._clear_results
+    _fmt_kb               = ImageCompressorDialog._fmt_kb
+
+    def add_initial_files(self, files: List[str]):
+        """Nạp danh sách ảnh vào view (dùng khi kéo thả từ Main App)."""
+        if files:
+            self._add_paths(files)

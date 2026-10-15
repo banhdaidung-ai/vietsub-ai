@@ -35,6 +35,33 @@ DEFAULT_CONFIG = {
     "export_txt": True,           # Có xuất file văn bản .txt rời hay không
     "review_subtitles": False,    # Duyệt và chỉnh sửa phụ đề trước khi ghép video
     "subtitle_style_preset": "capcut_yellow",  # Mẫu kiểu chữ CapCut: "capcut_yellow" | "capcut_white" | "capcut_blackbox" | "capcut_cyan" | "capcut_orange" | "capcut_minimal"
+    # ── Image Compressor Settings ──
+    "img_compress_enabled": True,       # Bật/tắt nén dung lượng
+    "img_target_value": "500",          # Giá trị mục tiêu (số)
+    "img_target_unit": "KB",            # Đơn vị: "KB" | "MB"
+    "img_output_format": "Tự động",     # "Tự động" | "JPEG" | "PNG" | "WEBP"
+    "img_keep_exif": True,              # Giữ metadata EXIF
+    "img_output_dir": "",               # Thư mục xuất ảnh (rỗng = dùng Downloads/compressed_images)
+    "img_wm_logo_enabled": False,       # Bật watermark logo
+    "img_wm_logo_path": "",             # Đường dẫn file logo
+    "img_wm_logo_scale": 0.15,          # Kích thước logo (0.03–0.60)
+    "img_wm_logo_pos": "Góc phải dưới",# Vị trí logo
+    "img_wm_logo_opacity": 100,         # Opacity logo (0–100)
+    "img_wm_logo_offset_x": 0.0,        # Lệch X logo
+    "img_wm_logo_offset_y": 0.0,        # Lệch Y logo
+    "img_wm_text_enabled": False,       # Bật watermark text
+    "img_wm_text_source": "Tên file ảnh",  # "Tên file ảnh" | "Tuỳ chỉnh"
+    "img_wm_text_custom": "",           # Text tuỳ chỉnh
+    "img_wm_text_pos": "Góc trái dưới",# Vị trí text
+    "img_wm_text_size": 20,             # Cỡ chữ (8–80)
+    "img_wm_text_color": "#000000",     # Màu chữ
+    "img_wm_text_bold": False,          # In đậm
+    "img_wm_text_shadow": False,        # Đổ bóng
+    "img_wm_text_box": False,           # Hộp nền
+    "img_wm_text_box_color": "#000000", # Màu hộp nền
+    "img_wm_text_box_opacity": 60,      # Opacity hộp nền (0–100)
+    "img_wm_text_offset_x": 0.0,        # Lệch X text
+    "img_wm_text_offset_y": 0.0,        # Lệch Y text
 }
 
 

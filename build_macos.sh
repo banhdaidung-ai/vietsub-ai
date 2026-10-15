@@ -119,9 +119,10 @@ if [ "$1" = "--install" ] || [ "$INSTALL_TO_APPS" = "1" ]; then
     echo "📲 Đang cài đặt Vietsub AI vào /Applications..."
     rm -rf "/Applications/Vietsub AI.app" "/Applications/VietsubAI.app"
     cp -R "dist/VietsubAI.app" "/Applications/Vietsub AI.app"
-    chmod -R u+w "/Applications/Vietsub AI.app"
-    xattr -cr "/Applications/Vietsub AI.app" 2>/dev/null || true
-    echo "✅ Đã cài đặt thành công vào: /Applications/Vietsub AI.app"
+    cp -R "dist/VietsubAI.app" "/Applications/VietsubAI.app"
+    chmod -R u+w "/Applications/Vietsub AI.app" "/Applications/VietsubAI.app"
+    xattr -cr "/Applications/Vietsub AI.app" "/Applications/VietsubAI.app" 2>/dev/null || true
+    echo "✅ Đã cài đặt thành công vào: /Applications/Vietsub AI.app & /Applications/VietsubAI.app"
 fi
 
 echo ""
